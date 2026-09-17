@@ -1,8 +1,12 @@
+import * as THREE from 'three';
+
 /**
  * HUAPI WAR - Sistema de Audio Dinámico
  * 1. Tone.js: Secuencias musicales procedurales con base de Classic Rock / Heavy Metal.
  * 2. Howler.js: Audio espacial 3D estéreo posicional para cañones, impactos y explosiones.
  */
+
+const camDir = new THREE.Vector3();
 
 class SoundEngine {
   constructor() {
@@ -23,15 +27,37 @@ class SoundEngine {
   }
 
   /**
+   * Carga Tone.js dinámicamente solo cuando el usuario interactúa con la página
+   */
+  async loadTone() {
+    if (window.Tone) return window.Tone;
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/vendor/tone/Tone.js';
+      script.onload = () => resolve(window.Tone);
+      script.onerror = (err) => {
+        console.warn('[-] No se pudo cargar Tone.js local, intentando CDN...', err);
+        const cdnScript = document.createElement('script');
+        cdnScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js';
+        cdnScript.onload = () => resolve(window.Tone);
+        cdnScript.onerror = reject;
+        document.head.appendChild(cdnScript);
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  /**
    * Inicializa Web Audio, Tone.js y Howler tras la primera interacción del usuario
    */
   async init() {
     if (this.isInitialized) return;
 
     try {
+      await this.loadTone();
       if (window.Tone) {
         await window.Tone.start();
-        console.log('[+] Tone.js audio context iniciado correctamente.');
+        console.log('[+] Tone.js audio context iniciado correctamente tras el gesto del usuario.');
         this.setupProceduralRockMusic();
       }
 
@@ -174,10 +200,9 @@ class SoundEngine {
 
     if (window.Howler && window.Howler.pos) {
       window.Howler.pos(camera.position.x, camera.position.y, camera.position.z);
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
+      camera.getWorldDirection(camDir);
       if (window.Howler.orientation) {
-        window.Howler.orientation(dir.x, dir.y, dir.z, 0, 1, 0);
+        window.Howler.orientation(camDir.x, camDir.y, camDir.z, 0, 1, 0);
       }
     }
   }
