@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HUAPI WAR - Guerra de Barcos en el Nahuel Huapi</title>
+  <meta name="description" content="Juego de guerra naval multijugador 3D en tiempo real en el lago Nahuel Huapi. Estilo Stylized PBR Painterly, combate naval y física lacustre.">
+
+  <!-- Tipografías Stylized Náuticas -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Librerías de Audio y Redes Locales con fallback CDN -->
+  <script src="/vendor/socket.io/socket.io.min.js"></script>
+  <script src="/vendor/howler/howler.min.js"></script>
+  <script src="/vendor/tone/Tone.js"></script>
+
+  <!-- Import Map para Three.js y Addons Oficiales -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/vendor/three/build/three.module.js",
+      "three/addons/": "/vendor/three/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Contenedor del Canvas WebGL Three.js -->
+  <div id="canvas-container">
+    <canvas id="three-canvas"></canvas>
+  </div>
+
+  <!-- 1. PANTALLA DE INICIO (MENU PRINCIPAL) -->
+  <div id="menu-screen" class="ui-layer interactive-panel">
+    <div class="game-title-container">
+      <h1 class="game-logo-title">HUAPI WAR</h1>
+      <p class="game-subtitle">Batalla Naval en el Nahuel Huapi</p>
+    </div>
+
+    <div class="menu-actions-box">
+      <button id="btn-random-ship" class="btn-naval" title="Generar un barco aleatorio e ingresar al lago">
+        🎲 Barco Aleatorio
+      </button>
+      <button id="btn-open-customizer" class="btn-naval btn-secondary" title="Personalizar chasis, cañones, bandera y bombas">
+        🛠️ Crear y Guardar Barco
+      </button>
+      <button id="btn-open-leaderboard-menu" class="btn-naval btn-secondary" title="Ver la tabla de capitanes de todo el país">
+        🏆 Tabla de Capitanes
+      </button>
+    </div>
+
+    <div class="menu-footer-info">
+      <span>Capacidad: 10 Jugadores Simultáneos</span>
+      <span>•</span>
+      <span>Bariloche - Patagonia Argentina</span>
+    </div>
+  </div>
+
+  <!-- 2. EDITOR Y PERSONALIZADOR DE BARCOS -->
+  <div id="customizer-screen" class="ui-layer hidden interactive-panel">
+    <!-- Panel Izquierdo: Chasis y Facción -->
+    <div class="customizer-panel">
+      <h2 class="customizer-header">Diseño del Navío</h2>
+
+      <!-- Nombre del Barco -->
+      <div class="customizer-section">
+        <label class="customizer-label" for="input-ship-name">Nombre en el Casco:</label>
+        <input type="text" id="input-ship-name" class="customizer-input-text" maxlength="22" value="Furia del Nahuel" placeholder="Ej. El Orgullo de Nicole">
+      </div>
+
+      <!-- Chasis (5 tipos) -->
+      <div class="customizer-section">
+        <label class="customizer-label">Tipo de Chasis:</label>
+        <div class="options-grid" id="chassis-options">
+          <button class="option-btn" data-value="corvette">Corbeta Ligera</button>
+          <button class="option-btn active" data-value="brigantine">Bergantín Patagónico</button>
+          <button class="option-btn" data-value="frigate">Fragata Nahuel</button>
+          <button class="option-btn" data-value="galleon">Galeón Pesado</button>
+          <button class="option-btn" data-value="monitor">Monitor Acorazado</button>
+        </div>
+      </div>
+
+      <!-- Facción (5 facciones) -->
+      <div class="customizer-section">
+        <label class="customizer-label">Facción y Estandarte:</label>
+        <div class="options-grid" id="faction-options">
+          <button class="option-btn active" data-value="Argentinos">🇦🇷 Argentinos</button>
+          <button class="option-btn" data-value="Piratas">☠️ Piratas</button>
+          <button class="option-btn" data-value="Españoles">🇪🇸 Españoles</button>
+          <button class="option-btn" data-value="Portugueses">🇵🇹 Portugueses</button>
+          <button class="option-btn" data-value="Franceses">🇫🇷 Franceses</button>
+        </div>
+      </div>
+
+      <!-- Cargar Barco Previo de SQLite -->
+      <div class="customizer-section">
+        <label class="customizer-label" for="select-saved-ships">Cargar Barco Guardado:</label>
+        <select id="select-saved-ships" class="customizer-input-text" style="cursor: pointer;">
+          <option value="">-- Seleccionar de la Base de Datos --</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Escenario Central de Visualización 3D -->
+    <div class="customizer-center-stage">
+      <div class="stage-watermark">
+        <h2 id="stage-ship-title">Bergantín Patagónico</h2>
+        <p id="stage-faction-subtitle">Armada Argentina - Lago Nahuel Huapi</p>
+      </div>
+
+      <div class="stage-controls-hint">
+        <span>Arrastra con el ratón para rotar la cámara 360°</span>
+      </div>
+
+      <div style="display: flex; gap: 14px;">
+        <button id="btn-save-ship" class="btn-naval btn-secondary">
+          💾 Guardar en Base de Datos
+        </button>
+        <button id="btn-launch-custom-ship" class="btn-naval">
+          ⚓ Zarpar a la Batalla
+        </button>
+      </div>
+    </div>
+
+    <!-- Panel Derecho: Cañones, Bombas y HUD -->
+    <div class="customizer-panel">
+      <h2 class="customizer-header">Armamento y HUD</h2>
+
+      <!-- Cañones (5 tipos) -->
+      <div class="customizer-section">
+        <label class="customizer-label">Batería de Cañones:</label>
+        <div class="options-grid" id="cannon-options">
+          <button class="option-btn active" data-value="bronze">Cañón de Bronce</button>
+          <button class="option-btn" data-value="pivot">Colisa Pesada</button>
+          <button class="option-btn" data-value="carronade">Carronada Devastadora</button>
+          <button class="option-btn" data-value="culverin">Culebrina Larga</button>
+          <button class="option-btn" data-value="mortar">Mortero Triple</button>
+        </div>
+      </div>
+
+      <!-- Armamento Especial (5 tipos) -->
+      <div class="customizer-section">
+        <label class="customizer-label">Armamento Especial (3 Cargas):</label>
+        <div class="options-grid" id="special-options">
+          <button class="option-btn active" data-value="greek_fire">Fuego Griego Patagónico</button>
+          <button class="option-btn" data-value="cluster_bomb">Bomba Racimo Glaciar</button>
+          <button class="option-btn" data-value="torpedo">Torpedo Nahuelito</button>
+          <button class="option-btn" data-value="grape_shot">Metralla Ígnea</button>
+          <button class="option-btn" data-value="seismic_charge">Carga Sísmica</button>
+        </div>
+      </div>
+
+      <!-- Color de HUD -->
+      <div class="customizer-section">
+        <label class="customizer-label">Color de Interfaz (HUD):</label>
+        <div class="options-grid" id="hud-color-options">
+          <button class="option-btn active" data-value="#00e5ff" style="border-left: 4px solid #00e5ff;">Cyan Glaciar</button>
+          <button class="option-btn" data-value="#ffd166" style="border-left: 4px solid #ffd166;">Oro Pirata</button>
+          <button class="option-btn" data-value="#ff3366" style="border-left: 4px solid #ff3366;">Carmesí Furia</button>
+          <button class="option-btn" data-value="#10b981" style="border-left: 4px solid #10b981;">Verde Esmeralda</button>
+          <button class="option-btn" data-value="#a855f7" style="border-left: 4px solid #a855f7;">Púrpura Real</button>
+        </div>
+      </div>
+
+      <div style="margin-top: auto; padding-top: 15px;">
+        <button id="btn-back-to-menu" class="btn-naval btn-secondary" style="width: 100%;">
+          ⬅️ Volver al Menú
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. MODAL DE COLA DE ESPERA (REQUISITO ESTRICTO DE RED) -->
+  <div id="queue-modal" class="ui-layer hidden">
+    <div class="queue-content-card">
+      <div class="queue-compass-spinner"></div>
+      <h2 class="queue-title">Esperando lugar para ingresar...</h2>
+      <p class="queue-subtext">
+        El lago Nahuel Huapi ha alcanzado su capacidad máxima de 10 capitanes en combate activo.<br>
+        Serás transferido automáticamente en cuanto un navío sea hundido o abandone las aguas.
+      </p>
+      <div>
+        <span class="queue-status-badge">
+          Posición en la fila: <strong id="queue-position-num">1</strong>
+        </span>
+      </div>
+      <div style="margin-top: 24px;">
+        <button id="btn-cancel-queue" class="btn-naval btn-secondary">Abandonar Cola</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. HUD DE COMBATE EN TIEMPO REAL -->
+  <div id="combat-hud" class="ui-layer hidden">
+    <!-- Retícula de Disparo -->
+    <div class="hud-crosshair" id="hud-crosshair">
+      <div class="crosshair-circle"></div>
+    </div>
+
+    <!-- Barra Superior: Brújula, Jugadores y Puntos -->
+    <div class="hud-top-bar">
+      <div class="hud-stat-item">
+        <span class="hud-stat-label">Capitanes Activos</span>
+        <span class="hud-stat-value" id="hud-active-players">1 / 10</span>
+      </div>
+
+      <div class="hud-compass-tape" id="hud-compass">N 000°</div>
+
+      <div class="hud-stat-item">
+        <span class="hud-stat-label">Puntuación</span>
+        <span class="hud-stat-value" id="hud-score-value">0</span>
+      </div>
+
+      <div class="hud-stat-item">
+        <span class="hud-stat-label">Hundidos</span>
+        <span class="hud-stat-value" id="hud-sunk-value">0</span>
+      </div>
+    </div>
+
+    <!-- Notificaciones de Combate -->
+    <div id="combat-feed"></div>
+
+    <!-- Indicador de Controles -->
+    <div class="controls-overlay-hint">
+      <span class="keycap">W</span><span class="keycap">S</span> Navegación &nbsp;
+      <span class="keycap">A</span><span class="keycap">D</span> Timón<br>
+      <span class="keycap">Click Izq</span> / <span class="keycap">Espacio</span> Cañones<br>
+      <span class="keycap">E</span> / <span class="keycap">Q</span> Bomba Especial
+    </div>
+
+    <!-- Dock Inferior: Vida, Sobrecalentamiento y Bombas -->
+    <div class="hud-bottom-dock">
+      <!-- Tarjeta de Estado del Navío -->
+      <div class="hud-ship-status-card">
+        <div class="hud-ship-name-badge">
+          <span id="hud-ship-name-display">El Orgullo de Nicole</span>
+          <span id="hud-faction-tag">🇦🇷 ARG</span>
+        </div>
+
+        <!-- Barra de Energía / Vida -->
+        <div class="bar-container">
+          <div class="bar-meta">
+            <span>Integridad del Casco</span>
+            <span id="hud-hp-text">100 / 100</span>
+          </div>
+          <div class="progress-track">
+            <div id="hud-hp-bar" class="progress-fill fill-health" style="width: 100%;"></div>
+          </div>
+        </div>
+
+        <!-- Barra de Sobrecalentamiento (10s de disparo continuo = 15s de bloqueo) -->
+        <div class="bar-container">
+          <div class="bar-meta">
+            <span>Calor de Cañones</span>
+            <span id="hud-heat-text">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="hud-heat-bar" class="progress-fill fill-heat" style="width: 0%;"></div>
+          </div>
+          <div class="heat-overheat-alert" id="hud-overheat-alert">
+            ¡CAÑONES SOBRECALENTADOS! ENFRIANDO (<span id="hud-overheat-countdown">15</span>s)
+          </div>
+        </div>
+      </div>
+
+      <!-- Dock de Armamento Especial (3 Bombas por Vida) -->
+      <div class="hud-special-weapons-dock">
+        <span class="hud-stat-label" id="hud-special-name">Fuego Griego Patagónico</span>
+        <div class="special-charges-row">
+          <div class="special-charge-orb" id="orb-charge-1" title="Carga Especial 1"></div>
+          <div class="special-charge-orb" id="orb-charge-2" title="Carga Especial 2"></div>
+          <div class="special-charge-orb" id="orb-charge-3" title="Carga Especial 3"></div>
+        </div>
+        <span style="font-size: 0.7rem; color: #94a3b8; margin-top: 6px;">[ Presiona E / Q ]</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. MODAL DE FIN DE PARTIDA (GAME OVER / BARCO HUNDIDO) -->
+  <div id="game-over-modal" class="ui-layer hidden">
+    <div class="game-over-card">
+      <h2 class="game-over-title">¡BARCO HUNDIDO!</h2>
+      <p style="color: #cbd5e1; font-size: 1.05rem;">Tu navío ha descendido a las profundidades del Nahuel Huapi.</p>
+
+      <div class="game-over-score-badge">
+        <span class="hud-stat-label">PUNTUACIÓN TOTAL ACUMULADA</span>
+        <div class="score-value" id="game-over-score">1,250</div>
+        <span style="color: #8ecae6; font-size: 0.9rem;" id="game-over-sunk-count">Barcos Hundidos: 2</span>
+      </div>
+
+      <!-- Formulario para Guardar en la Base de Datos SQLite -->
+      <div style="margin-bottom: 20px; text-align: left;">
+        <label class="customizer-label" for="input-leaderboard-name">Nombre y Apellido del Capitán:</label>
+        <input type="text" id="input-leaderboard-name" class="customizer-input-text" maxlength="30" placeholder="Ej. Nicole Comodoro">
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button id="btn-save-leaderboard" class="btn-naval">
+          🏆 Guardar en Tabla de Clasificación
+        </button>
+        <button id="btn-game-over-menu" class="btn-naval btn-secondary">
+          ⛵ Volver al Menú Principal
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. MODAL DE TABLA DE CLASIFICACIÓN (LEADERBOARD) -->
+  <div id="leaderboard-modal" class="ui-layer hidden">
+    <div class="leaderboard-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px;">
+        <h2 style="font-family: var(--font-title); color: #ffd166; font-size: 1.8rem;">
+          🏆 Tabla de Capitanes del País
+        </h2>
+        <button id="btn-close-leaderboard" class="btn-naval btn-secondary" style="padding: 6px 14px;">✕</button>
+      </div>
+      <p style="color: #94a3b8; font-size: 0.85rem; margin-top: 8px;">
+        Desde Comodoro Rivadavia hasta el resto del país: los más temibles corsarios del Nahuel Huapi.
+      </p>
+
+      <div class="leaderboard-table-container">
+        <table class="leaderboard-table">
+          <thead>
+            <tr>
+              <th>Rango</th>
+              <th>Capitán</th>
+              <th>Barco</th>
+              <th>Facción</th>
+              <th>Hundidos</th>
+              <th>Puntaje</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-tbody">
+            <!-- Rellenado dinámicamente desde SQLite -->
+          </tbody>
+        </table>
+      </div>
+
+      <div style="text-align: right; margin-top: 10px;">
+        <button id="btn-refresh-leaderboard" class="btn-naval btn-secondary" style="font-size: 0.9rem;">
+          🔄 Actualizar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts del Cliente (Módulos JS) -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
