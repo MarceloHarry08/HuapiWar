@@ -1,7 +1,7 @@
 # ⚓ HUAPI WAR
 
 > **Juego de Guerra de Barcos Multijugador 3D en Tiempo Real en el Lago Nahuel Huapi**
-> Ambientado en Bariloche, Patagonia Argentina. Estilo visual *Stylized PBR Painterly* (inspirado en *Sea of Thieves*).
+> Ambientado en Bariloche, Patagonia Argentina. Estilo visual *Stylized PBR Painterly*.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-green.svg)
