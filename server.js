@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -899,7 +900,7 @@ setInterval(() => {
 // -------------------------------------------------------------
 // Start Server
 // -------------------------------------------------------------
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log('========================================================');
   console.log('       HUAPI WAR - SERVIDOR DE COMBATE NAVAL');
   console.log('            Ambientado en el Lago Nahuel Huapi');
