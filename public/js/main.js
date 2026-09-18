@@ -67,6 +67,12 @@ const keysPressed = {
   firing: false,
 };
 
+// Reconocimiento y Estado de Dispositivos Móviles / Táctiles
+let isMobileDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 1024);
+let mobileControlsActive = isMobileDevice;
+let nippleJoystick = null;
+let musicBannerTimeout = null;
+
 // Generador de mallas de cofres flotantes
 function createChestVisualMesh(type) {
   const group = new THREE.Group();
@@ -143,6 +149,8 @@ function initThree() {
   window.addEventListener('resize', onWindowResize);
   setupInputListeners();
   setupUIEventListeners();
+  setupMobileControls();
+  setupMusicControls();
   loadSavedShipsDropdown();
 
   // Iniciar bucle de renderizado
@@ -153,6 +161,7 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  isMobileDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 1024);
 }
 
 // -------------------------------------------------------------
@@ -176,8 +185,10 @@ function switchState(newState) {
 
   if (newState === STATES.COMBAT) {
     audioEngine.startBattleMusic();
+    updateMobileControlsVisibility();
   } else {
     audioEngine.stopBattleMusic();
+    updateMobileControlsVisibility();
   }
 }
 
@@ -471,6 +482,182 @@ function sendCurrentInputs() {
     steer: keysPressed.steer,
     firing: keysPressed.firing,
   });
+}
+
+// -------------------------------------------------------------
+// Controles Táctiles Mobile (Nipple.js) y Mute de Música Minimalista
+// -------------------------------------------------------------
+function setupMobileControls() {
+  const fireBtn = document.getElementById('btn-mobile-fire');
+  const specialBtn = document.getElementById('btn-mobile-special');
+  const toggleMobileBtn = document.getElementById('btn-toggle-mobile-hud');
+
+  updateMobileControlsVisibility();
+
+  if (toggleMobileBtn) {
+    toggleMobileBtn.addEventListener('click', () => {
+      mobileControlsActive = !mobileControlsActive;
+      updateMobileControlsVisibility();
+    });
+  }
+
+  // Botón de Disparo Móvil (Disparo continuo mientras se mantiene presionado)
+  if (fireBtn) {
+    const startFire = (e) => {
+      e.preventDefault();
+      if (currentState !== STATES.COMBAT) return;
+      keysPressed.firing = true;
+      fireBtn.classList.add('pressed');
+      networkClient.fireCannons('both');
+      sendCurrentInputs();
+    };
+
+    const endFire = (e) => {
+      e.preventDefault();
+      keysPressed.firing = false;
+      fireBtn.classList.remove('pressed');
+      sendCurrentInputs();
+    };
+
+    fireBtn.addEventListener('touchstart', startFire, { passive: false });
+    fireBtn.addEventListener('touchend', endFire, { passive: false });
+    fireBtn.addEventListener('touchcancel', endFire, { passive: false });
+    fireBtn.addEventListener('mousedown', startFire);
+    fireBtn.addEventListener('mouseup', endFire);
+    fireBtn.addEventListener('mouseleave', endFire);
+  }
+
+  // Botón de Bomba Especial Móvil
+  if (specialBtn) {
+    const triggerSpecial = (e) => {
+      e.preventDefault();
+      if (currentState !== STATES.COMBAT) return;
+      specialBtn.classList.add('pressed');
+      networkClient.fireSpecial();
+      setTimeout(() => specialBtn.classList.remove('pressed'), 220);
+    };
+
+    specialBtn.addEventListener('touchstart', triggerSpecial, { passive: false });
+    specialBtn.addEventListener('click', triggerSpecial);
+  }
+}
+
+function updateMobileControlsVisibility() {
+  const container = document.getElementById('mobile-controls-container');
+  if (!container) return;
+
+  const shouldShow = (currentState === STATES.COMBAT) && mobileControlsActive;
+  container.classList.toggle('hidden', !shouldShow);
+
+  if (shouldShow && !nippleJoystick) {
+    // Breve delay para asegurar que el DOM esté disponible y dimensionado
+    setTimeout(() => initNippleJoystick(), 50);
+  }
+}
+
+function initNippleJoystick() {
+  const zone = document.getElementById('joystick-zone');
+  if (!zone || typeof window.nipplejs === 'undefined') return;
+
+  if (nippleJoystick) {
+    try {
+      nippleJoystick.destroy();
+    } catch (e) {}
+    nippleJoystick = null;
+  }
+
+  try {
+    nippleJoystick = window.nipplejs.create({
+      zone: zone,
+      mode: 'static',
+      position: { left: '75px', top: '75px' },
+      color: '#ffd166',
+      size: 95,
+      restOpacity: 0.55,
+      fadeTime: 180,
+    });
+
+    const container = document.getElementById('mobile-controls-container');
+
+    nippleJoystick.on('start', () => {
+      if (container) container.classList.add('touch-active');
+    });
+
+    nippleJoystick.on('move', (evt, data) => {
+      if (currentState !== STATES.COMBAT || !data || !data.vector) return;
+      const vx = data.vector.x;
+      const vy = data.vector.y;
+
+      // Navegación Adelante / Atrás
+      if (vy > 0.26) {
+        keysPressed.forward = 1;
+      } else if (vy < -0.26) {
+        keysPressed.forward = -1;
+      } else {
+        keysPressed.forward = 0;
+      }
+
+      // Timón Izquierda / Derecha
+      if (vx > 0.26) {
+        keysPressed.steer = 1;
+      } else if (vx < -0.26) {
+        keysPressed.steer = -1;
+      } else {
+        keysPressed.steer = 0;
+      }
+
+      sendCurrentInputs();
+    });
+
+    nippleJoystick.on('end', () => {
+      if (container) container.classList.remove('touch-active');
+      keysPressed.forward = 0;
+      keysPressed.steer = 0;
+      sendCurrentInputs();
+    });
+  } catch (err) {
+    console.warn('[-] Error inicializando joystick Nipple.js:', err);
+  }
+}
+
+function setupMusicControls() {
+  const musicToggleBtn = document.getElementById('btn-combat-music-toggle');
+  const musicIcon = document.getElementById('music-toggle-icon');
+
+  if (musicToggleBtn) {
+    musicToggleBtn.addEventListener('click', async () => {
+      await audioEngine.init();
+      const isMuted = audioEngine.toggleMusicMute();
+      if (musicIcon) {
+        musicIcon.textContent = isMuted ? '🔇' : '🎵';
+      }
+      musicToggleBtn.classList.toggle('muted', isMuted);
+      musicToggleBtn.title = isMuted ? 'Activar Música Clásica' : 'Silenciar Música Clásica';
+    });
+  }
+
+  // Notificador visual suave del tema clásico actual
+  audioEngine.onTrackChange((track) => {
+    if (!track) return;
+    showCombatMusicBanner(track.title, track.composer);
+  });
+}
+
+function showCombatMusicBanner(title, composer) {
+  const banner = document.getElementById('combat-music-banner');
+  const titleEl = document.getElementById('music-banner-title');
+  const composerEl = document.getElementById('music-banner-composer');
+
+  if (!banner || !titleEl || !composerEl) return;
+
+  titleEl.textContent = title;
+  composerEl.textContent = composer;
+  banner.classList.remove('hidden');
+
+  if (musicBannerTimeout) clearTimeout(musicBannerTimeout);
+  musicBannerTimeout = setTimeout(() => {
+    banner.classList.add('hidden');
+  }, 4500);
 }
 
 // -------------------------------------------------------------
@@ -914,9 +1101,15 @@ function updateSpecialBombUI(remaining) {
   const orb2 = document.getElementById('orb-charge-2');
   const orb3 = document.getElementById('orb-charge-3');
 
-  orb1.classList.toggle('spent', remaining < 1);
-  orb2.classList.toggle('spent', remaining < 2);
-  orb3.classList.toggle('spent', remaining < 3);
+  if (orb1) orb1.classList.toggle('spent', remaining < 1);
+  if (orb2) orb2.classList.toggle('spent', remaining < 2);
+  if (orb3) orb3.classList.toggle('spent', remaining < 3);
+
+  const mobileCharges = document.getElementById('mobile-special-charges');
+  if (mobileCharges) {
+    mobileCharges.textContent = remaining;
+    mobileCharges.style.background = remaining > 0 ? '#ffd166' : '#64748b';
+  }
 }
 
 // -------------------------------------------------------------
@@ -952,6 +1145,20 @@ function animate(now) {
       previewShipMesh.position.y = CUSTOMIZER_SHIP_POS.y + waveY * 0.45;
       previewShipMesh.rotation.z = Math.sin(timeSeconds * 1.2) * 0.035;
       previewShipMesh.rotation.x = Math.cos(timeSeconds * 1.5) * 0.025;
+
+      // Animación viva de pulsación y titileo de faroles ultrabrillantes en el astillero
+      if (previewShipMesh.userData && previewShipMesh.userData.lanternLights) {
+        previewShipMesh.userData.lanternLights.forEach((pLight, idx) => {
+          const flicker = 1.0 + Math.sin(timeSeconds * 3.6 + idx * 1.4) * 0.18 + Math.cos(timeSeconds * 8.0 + idx) * 0.08;
+          pLight.intensity = (pLight.userData.baseIntensity || 6.0) * flicker;
+          if (pLight.userData.glowSprites) {
+            const scIn = (pLight.userData.baseScaleInner || 3.0) * (0.94 + flicker * 0.08);
+            const scOut = (pLight.userData.baseScaleOuter || 5.0) * (0.90 + flicker * 0.12);
+            pLight.userData.glowSprites[0].scale.set(scIn, scIn, 1.0);
+            pLight.userData.glowSprites[1].scale.set(scOut, scOut, 1.0);
+          }
+        });
+      }
     }
 
     // Control de Vistas de Cámara del Editor

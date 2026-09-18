@@ -8,21 +8,54 @@ import * as THREE from 'three';
 
 const camDir = new THREE.Vector3();
 
+export const CLASSICAL_PLAYLIST = [
+  {
+    id: 1,
+    title: 'Sonata Claro de Luna (Adagio Sostenuto)',
+    composer: 'Ludwig van Beethoven',
+    src: '/audio/music/classical_1_moonlight.wav',
+  },
+  {
+    id: 2,
+    title: 'Gymnopédie No. 1',
+    composer: 'Erik Satie',
+    src: '/audio/music/classical_2_gymnopedie.wav',
+  },
+  {
+    id: 3,
+    title: 'Preludio en Do Mayor (BWV 846)',
+    composer: 'Johann Sebastian Bach',
+    src: '/audio/music/classical_3_bach_prelude.wav',
+  },
+  {
+    id: 4,
+    title: 'Aria para la Cuerda de Sol (Suite No. 3)',
+    composer: 'Johann Sebastian Bach',
+    src: '/audio/music/classical_4_air_g_string.wav',
+  },
+  {
+    id: 5,
+    title: 'El Cisne / Barcarola Náutica',
+    composer: 'Camille Saint-Saëns',
+    src: '/audio/music/classical_5_swan_lake.wav',
+  },
+];
+
 class SoundEngine {
   constructor() {
     this.isInitialized = false;
-    this.musicPlaying = false;
     this.listenerPosition = { x: 0, y: 0, z: 0 };
 
-    // Objetos Tone.js
-    this.guitarSynth = null;
-    this.bassSynth = null;
-    this.drumKick = null;
-    this.drumSnare = null;
-    this.drumHihat = null;
-    this.musicLoop = null;
+    // Banda sonora clásica Howler.js
+    this.playlist = CLASSICAL_PLAYLIST;
+    this.currentTrackIndex = 0;
+    this.currentHowl = null;
+    this.musicMuted = false;
+    this.musicVolume = 0.50;
+    this.combatMusicActive = false;
+    this.trackChangeListeners = [];
 
-    // Bancos Howler
+    // Bancos de efectos de sonido
     this.soundEffects = {};
   }
 
@@ -62,6 +95,11 @@ class SoundEngine {
       }
 
       this.setupHowlerSoundEffects();
+      if (window.Howler && window.Howler.ctx && window.Howler.ctx.state === 'suspended') {
+        try {
+          await window.Howler.ctx.resume();
+        } catch (e) {}
+      }
       this.isInitialized = true;
     } catch (err) {
       console.warn('[-] Advertencia al inicializar audio:', err);
@@ -157,25 +195,118 @@ class SoundEngine {
     }, '8n');
   }
 
-  startBattleMusic() {
-    if (!window.Tone || this.musicPlaying) return;
-    try {
-      window.Tone.Transport.start();
-      if (this.musicLoop) this.musicLoop.start(0);
-      this.musicPlaying = true;
-      console.log('[+] Música de combate Tone.js iniciada.');
-    } catch (e) {
-      console.warn('[-] No se pudo iniciar música:', e);
+  onTrackChange(listener) {
+    if (typeof listener === 'function') {
+      this.trackChangeListeners.push(listener);
     }
   }
 
+  notifyTrackChange() {
+    const track = this.getCurrentTrackInfo();
+    this.trackChangeListeners.forEach((fn) => {
+      try {
+        fn(track);
+      } catch (e) {
+        console.warn(e);
+      }
+    });
+  }
+
+  getCurrentTrackInfo() {
+    return this.playlist[this.currentTrackIndex] || null;
+  }
+
+  isMusicMuted() {
+    return this.musicMuted;
+  }
+
+  toggleMusicMute() {
+    this.musicMuted = !this.musicMuted;
+    if (this.currentHowl) {
+      if (this.musicMuted) {
+        this.currentHowl.volume(0);
+      } else {
+        this.currentHowl.volume(this.musicVolume);
+        if (!this.currentHowl.playing() && this.combatMusicActive) {
+          this.currentHowl.play();
+        }
+      }
+    }
+    return this.musicMuted;
+  }
+
+  startBattleMusic() {
+    this.combatMusicActive = true;
+    if (this.currentHowl && this.currentHowl.playing()) return;
+    this.playClassicalTrack(this.currentTrackIndex);
+  }
+
   stopBattleMusic() {
-    if (!window.Tone || !this.musicPlaying) return;
+    this.combatMusicActive = false;
+    if (this.currentHowl) {
+      try {
+        this.currentHowl.fade(this.currentHowl.volume(), 0, 800);
+        setTimeout(() => {
+          if (!this.combatMusicActive && this.currentHowl) {
+            this.currentHowl.stop();
+          }
+        }, 850);
+      } catch (e) {
+        if (this.currentHowl) this.currentHowl.stop();
+      }
+    }
+  }
+
+  nextTrack() {
+    this.currentTrackIndex = (this.currentTrackIndex + 1) % this.playlist.length;
+    if (this.combatMusicActive) {
+      this.playClassicalTrack(this.currentTrackIndex);
+    }
+  }
+
+  playClassicalTrack(index) {
+    if (!window.Howl) {
+      console.warn('[-] Howler.js no está disponible aún.');
+      return;
+    }
+
+    if (this.currentHowl) {
+      try {
+        this.currentHowl.stop();
+        this.currentHowl.unload();
+      } catch (e) {}
+      this.currentHowl = null;
+    }
+
+    this.currentTrackIndex = index % this.playlist.length;
+    const track = this.playlist[this.currentTrackIndex];
+    const initialVol = this.musicMuted ? 0 : this.musicVolume;
+
     try {
-      window.Tone.Transport.stop();
-      this.musicPlaying = false;
-    } catch (e) {
-      console.warn(e);
+      this.currentHowl = new window.Howl({
+        src: [track.src],
+        html5: true, // Streaming eficiente sin saturar memoria
+        volume: initialVol,
+        loop: false,
+        onplay: () => {
+          console.log(`[🎵] Reproduciendo: "${track.title}" - ${track.composer}`);
+          this.notifyTrackChange();
+        },
+        onend: () => {
+          if (this.combatMusicActive) {
+            this.nextTrack();
+          }
+        },
+        onloaderror: (id, err) => {
+          console.warn(`[-] Error cargando "${track.title}":`, err);
+        },
+      });
+
+      if (this.combatMusicActive) {
+        this.currentHowl.play();
+      }
+    } catch (err) {
+      console.warn('[-] Error al iniciar Howl:', err);
     }
   }
 

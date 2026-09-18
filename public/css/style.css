@@ -995,3 +995,298 @@ html, body {
   color: #f8fafc;
   margin: 0 2px;
 }
+
+/* =============================================================
+   BOTÓN MINIMALISTA DE MÚSICA & BANNER CLÁSICO EN COMBATE
+   ============================================================= */
+.hud-music-toggle-btn,
+.hud-mobile-toggle-btn {
+  background: rgba(12, 28, 48, 0.7);
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  color: #ffd166;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(10px);
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 0 8px rgba(255, 209, 102, 0.15);
+}
+
+.hud-music-toggle-btn:hover,
+.hud-mobile-toggle-btn:hover {
+  transform: scale(1.08);
+  border-color: #ffd166;
+  box-shadow: 0 0 16px rgba(255, 209, 102, 0.5);
+}
+
+.hud-music-toggle-btn:active,
+.hud-mobile-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.hud-music-toggle-btn.muted {
+  opacity: 0.55;
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  box-shadow: none;
+}
+
+.hud-music-toggle-btn.muted:hover {
+  opacity: 0.9;
+  border-color: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+
+/* Banner Notificador de Tema Clásico */
+.combat-music-banner {
+  position: absolute;
+  top: 75px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(8, 22, 38, 0.85);
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  border-radius: 24px;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 209, 102, 0.2);
+  pointer-events: none;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  z-index: 100;
+}
+
+.combat-music-banner.hidden {
+  opacity: 0;
+  transform: translate(-50%, -15px);
+  pointer-events: none;
+}
+
+.music-banner-icon {
+  font-size: 1.3rem;
+  animation: musicNotePulse 2s infinite ease-in-out;
+}
+
+@keyframes musicNotePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15) rotate(5deg); }
+}
+
+.music-banner-content {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.music-banner-title {
+  font-family: var(--font-title);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffd166;
+  letter-spacing: 0.5px;
+}
+
+.music-banner-composer {
+  font-size: 0.72rem;
+  color: #8ecae6;
+}
+
+/* =============================================================
+   CONTROLES TÁCTILES MOBILE CON OPACIDAD (NIPPLE.JS & BOTONES)
+   ============================================================= */
+.mobile-controls-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.65;
+  transition: opacity 0.3s ease;
+}
+
+.mobile-controls-container:hover,
+.mobile-controls-container.touch-active {
+  opacity: 0.92;
+}
+
+.mobile-controls-container.hidden {
+  display: none !important;
+}
+
+/* Zona del Joystick Virtual (Esquina Inferior Izquierda) */
+.mobile-joystick-zone {
+  position: absolute;
+  bottom: 30px;
+  left: 30px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  background: radial-gradient(circle, rgba(16, 40, 68, 0.45) 0%, rgba(5, 18, 32, 0.15) 70%, transparent 100%);
+  border: 2px dashed rgba(255, 209, 102, 0.35);
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-joystick-zone::after {
+  content: 'TIMÓN';
+  font-family: var(--font-title);
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
+/* Estilos inyectados a la interfaz de Nipple.js */
+.mobile-joystick-zone .nipple .back {
+  background: radial-gradient(circle, rgba(14, 45, 78, 0.6) 0%, rgba(4, 20, 36, 0.4) 100%) !important;
+  border: 2px solid rgba(255, 209, 102, 0.6) !important;
+  box-shadow: 0 0 15px rgba(255, 209, 102, 0.3) !important;
+}
+
+.mobile-joystick-zone .nipple .front {
+  background: radial-gradient(circle, #ffd166 0%, #e09852 100%) !important;
+  box-shadow: 0 0 16px rgba(255, 209, 102, 0.8) !important;
+  opacity: 0.85 !important;
+}
+
+/* Zona de Acciones Táctiles (Esquina Inferior Derecha) */
+.mobile-actions-zone {
+  position: absolute;
+  bottom: 35px;
+  right: 35px;
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.mobile-action-btn {
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  backdrop-filter: blur(10px);
+  transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Botón de Disparo de Cañones (Grande y Prominente) */
+.mobile-fire-btn {
+  width: 78px;
+  height: 78px;
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.5) 0%, rgba(153, 27, 27, 0.65) 100%);
+  border: 2.5px solid rgba(252, 165, 165, 0.85);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 18px rgba(239, 68, 68, 0.45);
+  color: #fff;
+}
+
+.mobile-fire-btn:active,
+.mobile-fire-btn.pressed {
+  transform: scale(0.92);
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.85) 0%, rgba(185, 28, 28, 0.95) 100%);
+  box-shadow: 0 0 28px rgba(239, 68, 68, 0.85);
+}
+
+.mobile-fire-btn .btn-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.mobile-fire-btn .btn-txt {
+  font-family: var(--font-title);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+/* Botón de Arma Especial */
+.mobile-special-btn {
+  width: 66px;
+  height: 66px;
+  background: radial-gradient(circle, rgba(0, 229, 255, 0.4) 0%, rgba(8, 110, 140, 0.6) 100%);
+  border: 2px solid rgba(125, 245, 255, 0.85);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 16px rgba(0, 229, 255, 0.4);
+  color: #fff;
+}
+
+.mobile-special-btn:active,
+.mobile-special-btn.pressed {
+  transform: scale(0.92);
+  background: radial-gradient(circle, rgba(0, 229, 255, 0.75) 0%, rgba(8, 145, 178, 0.9) 100%);
+  box-shadow: 0 0 26px rgba(0, 229, 255, 0.8);
+}
+
+.mobile-special-btn .btn-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.mobile-special-btn .btn-txt {
+  font-family: var(--font-title);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.mobile-charges-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 22px;
+  height: 22px;
+  background: #ffd166;
+  color: #0b1a2d;
+  font-weight: 900;
+  font-size: 0.75rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #0b1a2d;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+/* Ajustes Responsive en Dispositivos Móviles */
+@media (max-width: 1024px) {
+  .controls-overlay-hint {
+    display: none; /* Ocultar hint de teclado en móviles */
+  }
+
+  .hud-top-bar {
+    padding: 6px 12px;
+    gap: 8px;
+  }
+
+  .hud-stat-item {
+    padding: 4px 8px;
+  }
+
+  .hud-bottom-dock {
+    bottom: 12px;
+    transform: translateX(-50%) scale(0.88);
+    transform-origin: bottom center;
+  }
+}

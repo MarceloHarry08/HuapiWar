@@ -27,6 +27,7 @@ app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules/three
 app.use('/vendor/tone', express.static(path.join(__dirname, 'node_modules/tone/build')));
 app.use('/vendor/howler', express.static(path.join(__dirname, 'node_modules/howler/dist')));
 app.use('/vendor/socket.io', express.static(path.join(__dirname, 'node_modules/socket.io/client-dist')));
+app.use('/vendor/nipplejs', express.static(path.join(__dirname, 'node_modules/nipplejs/dist')));
 
 // -------------------------------------------------------------
 // Database Initialization (SQLite)

@@ -56,6 +56,28 @@ function createPainterlyWoodTexture(baseHex = '#4a2f1b', highlightHex = '#6e4528
 }
 
 /**
+ * Genera textura procedural de resplandor / halo luminoso para faroles navales
+ */
+let glowTextureCache = null;
+function getRadialGlowTexture() {
+  if (glowTextureCache) return glowTextureCache;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+  grad.addColorStop(0.18, 'rgba(255, 255, 255, 0.95)');
+  grad.addColorStop(0.42, 'rgba(255, 255, 255, 0.45)');
+  grad.addColorStop(0.72, 'rgba(255, 255, 255, 0.12)');
+  grad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  glowTextureCache = new THREE.CanvasTexture(canvas);
+  return glowTextureCache;
+}
+
+/**
  * Genera la textura del nombre del navío proyectada en el casco
  */
 export function createShipNameCanvasTexture(shipName, faction = 'Argentinos') {
@@ -675,58 +697,133 @@ export function buildShipMesh(config = {}) {
     shipRoot.add(cannonLeft);
   }
 
-  // 5. FAROLES Y LUCES DE NAVEGACIÓN (Interactivos con color y PointLight 3D)
+  // 5. FAROLES Y LUCES DE NAVEGACIÓN SUPER ILUMINADAS (Halos de resplandor, múltiples PointLights y destello)
+  const lanternLights = [];
   if (hasLanterns) {
     const lightCol = new THREE.Color(lanternColor);
-    const lanternMat = new THREE.MeshStandardMaterial({
+    const glowTex = getRadialGlowTexture();
+
+    // Material de vidrio ardiente para la linterna con emisión extrema
+    const lanternGlassMat = new THREE.MeshStandardMaterial({
       color: lightCol,
       emissive: lightCol,
-      emissiveIntensity: 3.5,
-      roughness: 0.2,
-      metalness: 0.4,
+      emissiveIntensity: 9.5,
+      roughness: 0.1,
+      metalness: 0.15,
+      transparent: true,
+      opacity: 0.95,
     });
+
+    // Núcleo central blanco incandescente (emulación de llama/filamento ardiente)
+    const lanternCoreMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+    });
+
+    // Marco ornamental de hierro y bronce envejecido
     const brassFrameMat = new THREE.MeshStandardMaterial({
       color: 0x1f170c,
-      metalness: 0.9,
+      metalness: 0.85,
       roughness: 0.35,
     });
 
-    const createLanternObject = (withLight = true, lightIntensity = 2.0, lightDist = 24) => {
+    // Creador de conjunto de farol naval con halo radial aditivo
+    const createLanternObject = (withLight = true, lightIntensity = 6.0, lightDist = 38, glowScale = 3.6) => {
       const g = new THREE.Group();
+
+      // Jaula protectora naval
       const frame = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.65, 6), brassFrameMat);
       g.add(frame);
-      const core = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22), lanternMat);
+
+      // Vidrio exterior emisor
+      const glass = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24), lanternGlassMat);
+      g.add(glass);
+
+      // Núcleo blanco incandescente
+      const core = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12), lanternCoreMat);
       g.add(core);
 
+      // Corona de resplandor brillante interior (Additive Blending)
+      const glowMatInner = new THREE.SpriteMaterial({
+        map: glowTex,
+        color: lightCol,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        opacity: 0.92,
+        depthWrite: false,
+      });
+      const glowSpriteInner = new THREE.Sprite(glowMatInner);
+      glowSpriteInner.scale.set(glowScale * 0.75, glowScale * 0.75, 1.0);
+      g.add(glowSpriteInner);
+
+      // Corona de halo suave exterior
+      const glowMatOuter = new THREE.SpriteMaterial({
+        map: glowTex,
+        color: lightCol,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        opacity: 0.55,
+        depthWrite: false,
+      });
+      const glowSpriteOuter = new THREE.Sprite(glowMatOuter);
+      glowSpriteOuter.scale.set(glowScale * 1.55, glowScale * 1.55, 1.0);
+      g.add(glowSpriteOuter);
+
       if (withLight) {
-        const pLight = new THREE.PointLight(lightCol, lightIntensity, lightDist, 1.2);
+        // PointLight de alta potencia que baña el casco, velas y el agua
+        const pLight = new THREE.PointLight(lightCol, lightIntensity, lightDist, 1.05);
         pLight.castShadow = false;
+        pLight.userData = {
+          baseIntensity: lightIntensity,
+          glowSprites: [glowSpriteInner, glowSpriteOuter],
+          baseScaleInner: glowScale * 0.75,
+          baseScaleOuter: glowScale * 1.55,
+        };
         g.add(pLight);
+        lanternLights.push(pLight);
       }
+
+      g.userData.isShipLantern = true;
       return g;
     };
 
-    // Farol de Popa (Gran farol naval de popa)
-    const sternLantern = createLanternObject(true, 2.5, 28);
-    sternLantern.position.set(0, hullDepth * 0.5 + aftCastleHeight + 0.6, -hullLength * 0.48);
+    // Farol de Popa Gran Faro Naval (Muy prominente e iluminado)
+    const sternLantern = createLanternObject(true, 9.0, 55, 4.8);
+    sternLantern.position.set(0, hullDepth * 0.5 + aftCastleHeight + 0.7, -hullLength * 0.48);
     shipRoot.add(sternLantern);
 
-    // Faroles de Proa (babor y estribor)
-    const bowLanternLeft = createLanternObject(false);
-    bowLanternLeft.position.set(-hullWidth * 0.32, hullDepth * 0.5 + 0.85, hullLength * 0.42);
+    // Faroles de Proa a Babor y Estribor (Ambos con PointLight de alta potencia)
+    const bowLanternLeft = createLanternObject(true, 5.8, 38, 3.4);
+    bowLanternLeft.position.set(-hullWidth * 0.33, hullDepth * 0.5 + 0.85, hullLength * 0.42);
     shipRoot.add(bowLanternLeft);
 
-    const bowLanternRight = createLanternObject(true, 1.8, 22);
-    bowLanternRight.position.set(hullWidth * 0.32, hullDepth * 0.5 + 0.85, hullLength * 0.42);
+    const bowLanternRight = createLanternObject(true, 5.8, 38, 3.4);
+    bowLanternRight.position.set(hullWidth * 0.33, hullDepth * 0.5 + 0.85, hullLength * 0.42);
     shipRoot.add(bowLanternRight);
 
-    // Farol en mástil mayor
+    // Faroles de cubierta en las bandas (a mitad del barco)
+    const midLanternLeft = createLanternObject(true, 4.8, 32, 2.8);
+    midLanternLeft.position.set(-hullWidth * 0.46, hullDepth * 0.5 + 0.45, 0);
+    shipRoot.add(midLanternLeft);
+
+    const midLanternRight = createLanternObject(true, 4.8, 32, 2.8);
+    midLanternRight.position.set(hullWidth * 0.46, hullDepth * 0.5 + 0.45, 0);
+    shipRoot.add(midLanternRight);
+
+    // Faroles en mástiles
     if (mastPositions.length > 0) {
-      const mastL = createLanternObject(true, 1.6, 20);
       const mIdx = Math.floor(mastPositions.length / 2);
       const mHeight = 15 + (mIdx === 1 && mastCount === 3 ? 3 : 0) - (chassis === 'monitor' ? 6 : 0);
-      mastL.position.set(0, mHeight * 0.68 + 1.2, mastPositions[mIdx] + 0.6);
-      shipRoot.add(mastL);
+
+      const mastMainL = createLanternObject(true, 6.5, 46, 4.0);
+      mastMainL.position.set(0, mHeight * 0.70 + 1.2, mastPositions[mIdx] + 0.6);
+      shipRoot.add(mastMainL);
+
+      // Si tiene más de un mástil, farol en el de proa
+      if (mastPositions.length > 1) {
+        const mastForeL = createLanternObject(true, 5.0, 36, 3.2);
+        mastForeL.position.set(0, (mHeight - 2) * 0.65 + 1.0, mastPositions[0] + 0.5);
+        shipRoot.add(mastForeL);
+      }
     }
   }
 
@@ -749,6 +846,7 @@ export function buildShipMesh(config = {}) {
     shipColor,
     lanternColor,
     hasLanterns,
+    lanternLights,
     floatingSprite,
   };
 

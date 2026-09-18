@@ -23,6 +23,7 @@
   "dependencies": {
     "express": "^5.2.1",
     "howler": "^2.2.4",
+    "nipplejs": "^1.0.4",
     "socket.io": "^4.8.3",
     "sqlite3": "5.1.7",
     "three": "^0.186.0",

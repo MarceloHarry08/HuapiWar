@@ -13,9 +13,17 @@
 
   <link rel="stylesheet" href="css/style.css">
 
-  <!-- Librerías de Audio y Redes Locales con fallback CDN -->
+  <!-- Librerías de Audio, Redes y Controles con fallback CDN -->
   <script src="/vendor/socket.io/socket.io.min.js"></script>
   <script src="/vendor/howler/howler.min.js"></script>
+  <script src="/vendor/nipplejs/index.js"></script>
+  <script>
+    if (typeof nipplejs === 'undefined') {
+      const cdnNipple = document.createElement('script');
+      cdnNipple.src = 'https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/index.js';
+      document.head.appendChild(cdnNipple);
+    }
+  </script>
 
   <!-- Import Map para Three.js y Addons Oficiales -->
   <script type="importmap">
@@ -266,6 +274,25 @@
         <span class="hud-stat-label">Hundidos</span>
         <span class="hud-stat-value" id="hud-sunk-value">0</span>
       </div>
+
+      <!-- Botón Minimalista de Música de Combate (🎵 / 🔇) -->
+      <button id="btn-combat-music-toggle" class="hud-music-toggle-btn" title="Activar / Desactivar Música Clásica" aria-label="Música Clásica">
+        <span id="music-toggle-icon">🎵</span>
+      </button>
+
+      <!-- Botón de Conmutación Manual de Controles Mobile -->
+      <button id="btn-toggle-mobile-hud" class="hud-mobile-toggle-btn" title="Alternar Controles Táctiles Mobile" aria-label="Controles Mobile">
+        <span>📱</span>
+      </button>
+    </div>
+
+    <!-- Banner Notificador del Tema Clásico Actual -->
+    <div id="combat-music-banner" class="combat-music-banner hidden">
+      <span class="music-banner-icon">🎼</span>
+      <div class="music-banner-content">
+        <span class="music-banner-title" id="music-banner-title">Sonata Claro de Luna</span>
+        <span class="music-banner-composer" id="music-banner-composer">Ludwig van Beethoven</span>
+      </div>
     </div>
 
     <!-- Notificaciones de Combate -->
@@ -323,6 +350,26 @@
           <div class="special-charge-orb" id="orb-charge-3" title="Carga Especial 3"></div>
         </div>
         <span style="font-size: 0.7rem; color: #94a3b8; margin-top: 6px;">[ Presiona E / Q ]</span>
+      </div>
+    </div>
+
+    <!-- Controles Táctiles Mobile Ergonomicos con Opacidad (Nipple.js) -->
+    <div id="mobile-controls-container" class="mobile-controls-container">
+      <!-- Joystick Virtual (Izquierda: Timón y Velocidad) -->
+      <div id="joystick-zone" class="mobile-joystick-zone" title="Usa el joystick para navegar"></div>
+
+      <!-- Botones de Acción (Derecha: Cañones y Bomba Especial) -->
+      <div class="mobile-actions-zone">
+        <button id="btn-mobile-fire" class="mobile-action-btn mobile-fire-btn" title="Disparar Cañones (Mantener o Tocar)">
+          <div class="btn-icon">🎯</div>
+          <span class="btn-txt">FUEGO</span>
+        </button>
+
+        <button id="btn-mobile-special" class="mobile-action-btn mobile-special-btn" title="Lanzar Bomba Especial">
+          <div class="btn-icon">💣</div>
+          <span class="btn-txt">ESPECIAL</span>
+          <span id="mobile-special-charges" class="mobile-charges-badge">3</span>
+        </button>
       </div>
     </div>
   </div>
