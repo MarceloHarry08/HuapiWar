@@ -2,12 +2,15 @@ import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
 
 /**
- * HUAPI WAR - Sistema de Agua Estilizada para el Lago Nahuel Huapi (Sea of Thieves Style)
- * Shaders con dispersión de luz profunda (azul/verde esmeralda), Subsurface Scattering (SSS)
- * en crestas de olas y cel-shading para anillos de espuma en los cascos.
+ * HUAPI WAR - Sistema de Agua Realista y Profunda para el Lago Nahuel Huapi
+ * Shader personalizado con dispersión espectral azul glaciar (Patagonia Deep Blue),
+ * Subsurface Scattering (SSS) en crestas de olas a contraluz, reflejo Fresnel
+ * del cielo cordillerano, destellos solares especulares y mapa de normales armónico continuo.
  */
 
-// Función matemática de elevación de olas (espectral / armónicos sincronizados)
+/**
+ * Función matemática de elevación de olas para la física de cabeceo y flotación de los barcos
+ */
 export function getLakeWaveHeight(x, z, time) {
   const w1 = Math.sin(x * 0.018 + time * 1.5) * 0.85;
   const w2 = Math.cos(z * 0.022 + time * 1.2) * 0.65;
@@ -17,10 +20,13 @@ export function getLakeWaveHeight(x, z, time) {
 }
 
 /**
- * Genera una textura de normales procedurales para el agua del lago
+ * Genera una textura de normales procedural de alta fidelidad (1024x1024)
+ * Combina 8 octavas armónicas direccionales con frecuencias enteras periódicas
+ * para garantizar un tileado infinito completamente seamless (sin costuras visibles)
+ * y cálculo de gradientes por diferencias centrales.
  */
 function createProceduralWaterNormalMap() {
-  const size = 512;
+  const size = 1024;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -28,26 +34,66 @@ function createProceduralWaterNormalMap() {
   const imgData = ctx.createImageData(size, size);
   const data = imgData.data;
 
+  const twoPi = Math.PI * 2;
+  const heights = new Float32Array(size * size);
+
+  // 8 octavas armónicas con frecuencias periódicas enteras (seamless en X e Y)
+  const octaves = [
+    { kx: 3,  ky: 2,   amp: 1.0,   phase: 0.35 },
+    { kx: -4, ky: 3,   amp: 0.70,  phase: 1.20 },
+    { kx: 6,  ky: -5,  amp: 0.45,  phase: 2.10 },
+    { kx: -8, ky: 7,   amp: 0.30,  phase: 0.85 },
+    { kx: 12, ky: -10, amp: 0.20,  phase: 1.65 },
+    { kx: -18, ky: 16, amp: 0.13,  phase: 2.90 },
+    { kx: 28, ky: -24, amp: 0.08,  phase: 0.45 },
+    { kx: -42, ky: 36, amp: 0.045, phase: 1.95 },
+  ];
+
+  // 1. Campo de alturas sintético
   for (let y = 0; y < size; y++) {
+    const vy = (y / size) * twoPi;
+    const rowOffset = y * size;
     for (let x = 0; x < size; x++) {
-      const u = (x / size) * Math.PI * 8;
-      const v = (y / size) * Math.PI * 8;
+      const vx = (x / size) * twoPi;
+      let h = 0.0;
+      for (let i = 0; i < octaves.length; i++) {
+        const oct = octaves[i];
+        h += Math.sin(vx * oct.kx + vy * oct.ky + oct.phase) * oct.amp;
+      }
+      heights[rowOffset + x] = h;
+    }
+  }
 
-      // Ondas estilizadas suaves en bloque (Painterly / sin ruido granular de alta frecuencia)
-      const nx = Math.sin(u) * 0.5 + Math.sin(u * 2.0 + v) * 0.25;
-      const ny = Math.cos(v) * 0.5 + Math.cos(v * 2.0 + u) * 0.25;
-      const nz = 1.0;
+  // 2. Cálculo de vectores normales en espacio tangente por diferencias centrales periódicas
+  const normalStrength = 3.6;
 
-      // Normalizar vector (nx, ny, nz) a espacio [0, 255]
-      const len = Math.hypot(nx, ny, nz);
-      const r = ((nx / len) * 0.5 + 0.5) * 255;
-      const g = ((ny / len) * 0.5 + 0.5) * 255;
-      const b = ((nz / len) * 0.5 + 0.5) * 255;
+  for (let y = 0; y < size; y++) {
+    const yPrev = (y - 1 + size) % size;
+    const yNext = (y + 1) % size;
+    const rowOffset = y * size;
+    const rowPrev = yPrev * size;
+    const rowNext = yNext * size;
 
-      const idx = (y * size + x) * 4;
-      data[idx] = r;
-      data[idx + 1] = g;
-      data[idx + 2] = b;
+    for (let x = 0; x < size; x++) {
+      const xPrev = (x - 1 + size) % size;
+      const xNext = (x + 1) % size;
+
+      const dhdx = (heights[rowOffset + xNext] - heights[rowOffset + xPrev]) * 0.5;
+      const dhdy = (heights[rowNext + x] - heights[rowPrev + x]) * 0.5;
+
+      let nx = -dhdx * normalStrength;
+      let ny = -dhdy * normalStrength;
+      let nz = 1.0;
+
+      const invLen = 1.0 / Math.hypot(nx, ny, nz);
+      nx *= invLen;
+      ny *= invLen;
+      nz *= invLen;
+
+      const idx = (rowOffset + x) * 4;
+      data[idx]     = Math.floor((nx * 0.5 + 0.5) * 255);
+      data[idx + 1] = Math.floor((ny * 0.5 + 0.5) * 255);
+      data[idx + 2] = Math.floor((nz * 0.5 + 0.5) * 255);
       data[idx + 3] = 255;
     }
   }
@@ -56,25 +102,30 @@ function createProceduralWaterNormalMap() {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  texture.generateMipmaps = true;
   return texture;
 }
 
 /**
- * Inicializa y configura la malla de agua del Nahuel Huapi
+ * Inicializa y configura la malla de agua del Nahuel Huapi con shader azul realista
  */
 export function createNahuelHuapiWater(scene, sunDirection) {
-  const waterGeometry = new THREE.PlaneGeometry(3200, 3200, 128, 128);
+  const waterGeometry = new THREE.PlaneGeometry(3600, 3600, 128, 128);
   const normalMap = createProceduralWaterNormalMap();
 
-  // Instanciar Three.js Water Addon
+  const lightDir = sunDirection
+    ? sunDirection.clone().normalize()
+    : new THREE.Vector3(0.6, 0.7, 0.3).normalize();
+
+  // Instanciar Three.js Water Addon oficial
   const water = new Water(waterGeometry, {
-    textureWidth: 512,
-    textureHeight: 512,
+    textureWidth: 1024,
+    textureHeight: 1024,
     waterNormals: normalMap,
-    sunDirection: sunDirection || new THREE.Vector3(0.6, 0.7, 0.3).normalize(),
-    sunColor: 0xffe8aa, // Luz dorada de sol andino
-    waterColor: 0x0a335c, // Azul profundo del Lago Nahuel Huapi
-    distortionScale: 3.5,
+    sunDirection: lightDir,
+    sunColor: 0xfff5e6,  // Luz brillante y cálida del sol de montaña
+    waterColor: 0x07427d, // Azul profundo del Lago Nahuel Huapi
+    distortionScale: 5.5,
     fog: scene.fog !== undefined,
   });
 
@@ -82,35 +133,53 @@ export function createNahuelHuapiWater(scene, sunDirection) {
   water.position.y = 0;
   water.receiveShadow = true;
 
-  // Personalización del Shader para SSS en crestas y dispersión azul zafiro
+  // Inyección de shader para color azul realista con dispersión y SSS
   const material = water.material;
-  material.uniforms['time'] = { value: 0 };
-  material.uniforms['crestColor'] = { value: new THREE.Color(0x38bdf8) }; // Azul glaciar luminoso SSS
-  material.uniforms['deepColor'] = { value: new THREE.Color(0x021630) };  // Azul abisal profundo
-  material.uniforms['foamThreshold'] = { value: 0.68 };
-
-  // Inyección de lógica en el fragment shader para Subsurface Scattering y dispersión azul
   const originalFragment = material.fragmentShader;
-  material.fragmentShader = originalFragment.replace(
-    'gl_FragColor = vec4( color, 1.0 );',
-    `
-      // Dispersión profunda en azul y realce de crestas con Subsurface Scattering (SSS)
-      vec3 deepBlue = vec3(0.018, 0.11, 0.28);
-      vec3 sssCrest = vec3(0.22, 0.70, 0.98);
-      
-      // Simulación de luz a contraluz que atraviesa las crestas de las olas
-      float waveCrestFactor = clamp(eye.y * 0.05 + 0.4, 0.0, 1.0);
-      vec3 stylizedColor = mix(deepBlue, color, 0.70);
-      stylizedColor = mix(stylizedColor, sssCrest, pow(waveCrestFactor, 2.8) * 0.42);
+  const targetCode = 'vec3 outgoingLight = albedo;';
 
-      // Espuma cel-shaded en crestas
-      if (waveCrestFactor > 0.88) {
-        stylizedColor = mix(stylizedColor, vec3(0.95, 0.98, 1.0), 0.85);
-      }
+  if (originalFragment.includes(targetCode)) {
+    const realisticBlueShader = `
+      // === AGUA REALISTA AZUL PROFUNDO DEL LAGO NAHUEL HUAPI ===
+      // Absorción espectral y dispersión del agua glaciar andina
+      vec3 deepAbyss     = vec3(0.008, 0.12, 0.35); // Azul cobalto abisal (profundidades)
+      vec3 midDepthBlue  = vec3(0.025, 0.32, 0.72); // Azul zafiro patagónico (cuerpo del lago)
+      vec3 shallowAzure  = vec3(0.08, 0.56, 0.92);  // Celeste translúcido diáfano
+      vec3 crestGlacier  = vec3(0.28, 0.80, 1.0);   // Subsurface Scattering (SSS) en crestas
 
-      gl_FragColor = vec4(stylizedColor, 0.95);
-    `
-  );
+      float normalUp = clamp(surfaceNormal.y, 0.0, 1.0);
+      float viewDotNormal = clamp(dot(surfaceNormal, eyeDirection), 0.0, 1.0);
+      float waveSlope = 1.0 - normalUp;
+
+      // Gradiente espectral según ángulo de visión y luz difusa incidente
+      vec3 waterBody = mix(deepAbyss, midDepthBlue, normalUp * 0.85);
+      waterBody = mix(waterBody, shallowAzure, viewDotNormal * 0.40 + diffuseLight.r * 0.35);
+
+      // Subsurface Scattering (SSS): luz solar que atraviesa las crestas de las olas
+      float sssBacklight = max(0.0, dot(-eyeDirection, sunDirection + surfaceNormal * 0.6));
+      float sssIntensity = pow(sssBacklight, 3.5) * (waveSlope * 2.2 + 0.15);
+      waterBody += crestGlacier * clamp(sssIntensity * 0.85, 0.0, 0.9);
+
+      // Fresnel físico: reflejo del cielo azul andino en ángulos rasantes
+      vec3 skySheen = mix(reflectionSample, vec3(0.22, 0.52, 0.86), 0.30);
+      float fresnelTerm = clamp(reflectance, 0.0, 1.0);
+      vec3 compositeWater = mix(waterBody, skySheen + specularLight * 2.2, fresnelTerm * 0.70 + 0.12);
+
+      // Destellos solares especulares nítidos sobre las ondas (Sun Glints)
+      vec3 halfVector = normalize(sunDirection + eyeDirection);
+      float sunGlint = pow(max(0.0, dot(surfaceNormal, halfVector)), 128.0);
+      compositeWater += sunColor * sunGlint * 1.6;
+
+      // Micro-espuma blanca/celeste en crestas de oleaje pronunciado
+      float foamTurbulence = sin(worldPosition.x * 0.35 + worldPosition.z * 0.35 + time * 3.0) * 0.5 + 0.5;
+      float foamEdge = smoothstep(0.24, 0.40, waveSlope + foamTurbulence * 0.12);
+      vec3 foamColor = vec3(0.93, 0.98, 1.0);
+      compositeWater = mix(compositeWater, foamColor, foamEdge * 0.50);
+
+      vec3 outgoingLight = compositeWater;
+    `;
+    material.fragmentShader = originalFragment.replace(targetCode, realisticBlueShader);
+  }
 
   scene.add(water);
 
@@ -122,37 +191,46 @@ export function createNahuelHuapiWater(scene, sunDirection) {
     mesh: water,
     foamGroup: foamRingsGroup,
     update: (time) => {
-      material.uniforms['time'].value = time;
+      // Velocidad fluida realista para la traslación armónica de las ondas
+      material.uniforms['time'].value = time * 3.2;
     },
   };
 }
 
 /**
- * Crea un anillo de espuma cel-shading en la línea de flotación de un barco
+ * Crea un anillo de espuma difuminado y orgánico para la línea de flotación de un barco
  */
 export function createShipFoamRing() {
-  const geom = new THREE.RingGeometry(3.5, 5.2, 24);
+  const geom = new THREE.RingGeometry(3.5, 5.8, 32);
   geom.rotateX(-Math.PI / 2);
 
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 14;
+
+  // Gradiente radial suave para espuma difusa y natural en el agua azul
+  const grad = ctx.createRadialGradient(64, 64, 38, 64, 64, 62);
+  grad.addColorStop(0.0, 'rgba(230, 245, 255, 0.0)');
+  grad.addColorStop(0.4, 'rgba(240, 250, 255, 0.85)');
+  grad.addColorStop(0.7, 'rgba(180, 225, 255, 0.50)');
+  grad.addColorStop(1.0, 'rgba(140, 210, 255, 0.0)');
+
+  ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(64, 64, 52, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.arc(64, 64, 62, 0, Math.PI * 2);
+  ctx.fill();
 
   const tex = new THREE.CanvasTexture(canvas);
   const mat = new THREE.MeshBasicMaterial({
     map: tex,
     transparent: true,
-    opacity: 0.75,
+    opacity: 0.82,
     depthWrite: false,
+    side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(geom, mat);
-  mesh.position.y = 0.1;
+  mesh.position.y = 0.12;
   return mesh;
 }
