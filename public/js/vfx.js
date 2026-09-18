@@ -42,6 +42,16 @@ class ParticleSystem {
       opacity: 0.8,
       depthWrite: false,
     });
+
+    // Material de curación / reparación dorada-esmeralda
+    this.healTex = this.createPuffTexture('#fef08a', '#10b981');
+    this.healMat = new THREE.SpriteMaterial({
+      map: this.healTex,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
   }
 
   createPuffTexture(centerColor, edgeColor) {
@@ -300,35 +310,131 @@ class ParticleSystem {
   }
 
   /**
-   * Crea un anillo de choque horizontal en la superficie del agua
+   * Efecto de Curación y Reparación del Barco (Partículas doradas y esmeraldas)
    */
-  createShockwaveRing(pos, colorHex, maxRadius, duration) {
-    const ringGeom = new THREE.RingGeometry(0.8, 1.6, 32);
-    ringGeom.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: colorHex,
-      transparent: true,
-      opacity: 0.9,
-      side: THREE.DoubleSide,
-      depthWrite: false,
+  createHealingSparkles(pos) {
+    for (let i = 0; i < 24; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 1.0 + Math.random() * 4.5;
+      this.spawnParticle({
+        position: new THREE.Vector3(
+          pos.x + Math.cos(angle) * dist,
+          pos.y + 1.0 + Math.random() * 2.0,
+          pos.z + Math.sin(angle) * dist
+        ),
+        material: this.healMat,
+        velocity: new THREE.Vector3(
+          (Math.random() - 0.5) * 2,
+          5 + Math.random() * 6,
+          (Math.random() - 0.5) * 2
+        ),
+        gravity: 0.5,
+        initialScale: 1.8,
+        scaleRate: 0.8,
+        fadeRate: 0.7,
+        lifetime: 1.4,
+      });
+    }
+    this.createShockwaveRing(pos, 0x10b981, 16, 0.8);
+  }
+
+  /**
+   * Humo de deterioro progresivo en cubierta cuando la salud baja
+   */
+  createShipDamageSmoke(pos, scale = 1.0) {
+    const spread = 2.5 * scale;
+    this.spawnParticle({
+      position: new THREE.Vector3(
+        pos.x + (Math.random() - 0.5) * spread,
+        pos.y + 2.0,
+        pos.z + (Math.random() - 0.5) * spread
+      ),
+      material: this.smokeMat,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 1.5,
+        3.5 + Math.random() * 2.5,
+        (Math.random() - 0.5) * 1.5
+      ),
+      gravity: 0.4,
+      initialScale: 2.2 * scale,
+      scaleRate: 1.4,
+      fadeRate: 0.75,
+      lifetime: 1.3,
+    });
+  }
+
+  /**
+   * Fuego activo en cubierta cuando el barco está en estado crítico (<40% HP)
+   */
+  createShipDeckFire(pos) {
+    this.spawnParticle({
+      position: new THREE.Vector3(
+        pos.x + (Math.random() - 0.5) * 3.0,
+        pos.y + 1.8 + Math.random() * 1.5,
+        pos.z + (Math.random() - 0.5) * 3.0
+      ),
+      material: this.fireMat,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 1.2,
+        4.0 + Math.random() * 3.0,
+        (Math.random() - 0.5) * 1.2
+      ),
+      gravity: 0.2,
+      initialScale: 2.8,
+      scaleRate: 0.9,
+      fadeRate: 2.2,
+      lifetime: 0.45,
     });
 
-    const ringMesh = new THREE.Mesh(ringGeom, ringMat);
-    ringMesh.position.set(pos.x, 0.4, pos.z);
-    this.vfxGroup.add(ringMesh);
+    // Columna de humo negro denso
+    if (Math.random() < 0.45) {
+      this.createShipDamageSmoke(pos, 1.4);
+    }
+  }
 
-    let elapsed = 0;
-    const animateRing = () => {
-      // En bucle de actualización
-    };
+  /**
+   * Colisión y embestida violenta entre cascos de barcos (Astillas y choque)
+   */
+  createWoodCollisionCrash(pos) {
+    // Astillas incandescentes y fragmentos
+    for (let i = 0; i < 20; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 6 + Math.random() * 10;
+      this.spawnParticle({
+        position: new THREE.Vector3(pos.x, 2.5, pos.z),
+        material: this.fireMat,
+        velocity: new THREE.Vector3(
+          Math.cos(angle) * speed,
+          4 + Math.random() * 8,
+          Math.sin(angle) * speed
+        ),
+        gravity: -16,
+        initialScale: 1.8,
+        scaleRate: 0.8,
+        fadeRate: 1.8,
+        lifetime: 0.7,
+      });
+    }
 
-    this.particles.push({
-      mesh: ringMesh,
-      maxRadius,
-      duration,
-      elapsed: 0,
-      isRing: true,
-    });
+    // Gran bocanada de polvo y astillas
+    for (let i = 0; i < 8; i++) {
+      this.spawnParticle({
+        position: new THREE.Vector3(pos.x, 2.0, pos.z),
+        material: this.smokeMat,
+        velocity: new THREE.Vector3(
+          (Math.random() - 0.5) * 6,
+          3 + Math.random() * 4,
+          (Math.random() - 0.5) * 6
+        ),
+        gravity: 0.5,
+        initialScale: 3.5,
+        scaleRate: 2.0,
+        fadeRate: 0.9,
+        lifetime: 1.2,
+      });
+    }
+
+    this.createShockwaveRing(pos, 0xffaa33, 22, 0.7);
   }
 
   update(dt) {

@@ -73,7 +73,7 @@ export function createNahuelHuapiWater(scene, sunDirection) {
     waterNormals: normalMap,
     sunDirection: sunDirection || new THREE.Vector3(0.6, 0.7, 0.3).normalize(),
     sunColor: 0xffe8aa, // Luz dorada de sol andino
-    waterColor: 0x05464a, // Verde esmeralda profundo del Nahuel Huapi
+    waterColor: 0x0a335c, // Azul profundo del Lago Nahuel Huapi
     distortionScale: 3.5,
     fog: scene.fog !== undefined,
   });
@@ -82,33 +82,33 @@ export function createNahuelHuapiWater(scene, sunDirection) {
   water.position.y = 0;
   water.receiveShadow = true;
 
-  // Personalización del Shader para SSS en crestas y dispersión esmeralda
+  // Personalización del Shader para SSS en crestas y dispersión azul zafiro
   const material = water.material;
   material.uniforms['time'] = { value: 0 };
-  material.uniforms['crestColor'] = { value: new THREE.Color(0x38fcd4) }; // Turquesa fluorescente SSS
-  material.uniforms['deepColor'] = { value: new THREE.Color(0x022e33) };  // Azul esmeralda glacial profundo
+  material.uniforms['crestColor'] = { value: new THREE.Color(0x38bdf8) }; // Azul glaciar luminoso SSS
+  material.uniforms['deepColor'] = { value: new THREE.Color(0x021630) };  // Azul abisal profundo
   material.uniforms['foamThreshold'] = { value: 0.68 };
 
-  // Inyección de lógica en el fragment shader para Subsurface Scattering y dispersión
+  // Inyección de lógica en el fragment shader para Subsurface Scattering y dispersión azul
   const originalFragment = material.fragmentShader;
   material.fragmentShader = originalFragment.replace(
     'gl_FragColor = vec4( color, 1.0 );',
     `
-      // Dispersión profunda y realce de crestas con Subsurface Scattering (SSS)
-      vec3 deepEmerald = vec3(0.015, 0.18, 0.20);
-      vec3 sssCrest = vec3(0.22, 0.98, 0.82);
+      // Dispersión profunda en azul y realce de crestas con Subsurface Scattering (SSS)
+      vec3 deepBlue = vec3(0.018, 0.11, 0.28);
+      vec3 sssCrest = vec3(0.22, 0.70, 0.98);
       
       // Simulación de luz a contraluz que atraviesa las crestas de las olas
       float waveCrestFactor = clamp(eye.y * 0.05 + 0.4, 0.0, 1.0);
-      vec3 stylizedColor = mix(deepEmerald, color, 0.75);
-      stylizedColor = mix(stylizedColor, sssCrest, pow(waveCrestFactor, 3.0) * 0.35);
+      vec3 stylizedColor = mix(deepBlue, color, 0.70);
+      stylizedColor = mix(stylizedColor, sssCrest, pow(waveCrestFactor, 2.8) * 0.42);
 
       // Espuma cel-shaded en crestas
       if (waveCrestFactor > 0.88) {
-        stylizedColor = mix(stylizedColor, vec3(0.95, 1.0, 0.98), 0.75);
+        stylizedColor = mix(stylizedColor, vec3(0.95, 0.98, 1.0), 0.85);
       }
 
-      gl_FragColor = vec4(stylizedColor, 0.94);
+      gl_FragColor = vec4(stylizedColor, 0.95);
     `
   );
 

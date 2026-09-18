@@ -37,6 +37,11 @@ let scene, camera, renderer, waterSystem, envSystem, vfxSystem;
 let previewShipMesh = null;
 const enemyShipMeshes = new Map(); // id -> { mesh, foamRing, config }
 const cannonballMeshes = new Map(); // id -> mesh
+const chestMeshes = new Map(); // id -> { group, beam, type }
+
+// Posición despejada en aguas abiertas para el astillero
+const CUSTOMIZER_SHIP_POS = new THREE.Vector3(0, 0.6, 175);
+let customizerView = 'orbit'; // 'orbit', 'side', 'front', 'back', 'top'
 
 // Estado local del jugador
 let localPlayerShipMesh = null;
@@ -55,6 +60,51 @@ const keysPressed = {
   steer: 0,
   firing: false,
 };
+
+// Generador de mallas de cofres flotantes
+function createChestVisualMesh(type) {
+  const group = new THREE.Group();
+
+  // Caja de madera del cofre
+  const boxGeom = new THREE.BoxGeometry(2.8, 1.8, 1.8);
+  const woodMat = new THREE.MeshStandardMaterial({
+    color: type === 'health' ? 0x14532d : 0x5c3d2e,
+    roughness: 0.75,
+    metalness: 0.15,
+  });
+  const box = new THREE.Mesh(boxGeom, woodMat);
+  box.position.y = 0.9;
+  box.castShadow = true;
+  group.add(box);
+
+  // Ribetes dorados y herrajes de bronce
+  const rimGeom = new THREE.BoxGeometry(3.0, 0.35, 2.0);
+  const brassMat = new THREE.MeshStandardMaterial({
+    color: 0xd4a853,
+    roughness: 0.35,
+    metalness: 0.85,
+  });
+  const rim = new THREE.Mesh(rimGeom, brassMat);
+  rim.position.y = 1.4;
+  group.add(rim);
+
+  // Baliza de luz vertical estilizada (verde para salud, cian para bombas)
+  const beamColor = type === 'health' ? 0x10b981 : 0x00e5ff;
+  const beamGeom = new THREE.CylinderGeometry(0.35, 1.6, 45, 8);
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: beamColor,
+    transparent: true,
+    opacity: 0.45,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const beam = new THREE.Mesh(beamGeom, beamMat);
+  beam.position.y = 23;
+  group.add(beam);
+
+  return { group, beam, type };
+}
 
 // -------------------------------------------------------------
 // Inicialización del Motor Gráfico Three.js
@@ -142,7 +192,8 @@ function createOrUpdatePreviewShip() {
     hudColor: currentShipConfig.hud_color,
   });
 
-  previewShipMesh.position.set(0, 0, 0);
+  // Posicionar en aguas abiertas despejadas del Nahuel Huapi
+  previewShipMesh.position.copy(CUSTOMIZER_SHIP_POS);
   scene.add(previewShipMesh);
 
   // Actualizar títulos en el escenario
@@ -253,11 +304,23 @@ networkClient.onPlayerLeft = (id) => {
 networkClient.onEvent = (evt) => {
   if (evt.type === 'cannon_fire') {
     audioEngine.playCannonShot(evt);
-    const forward = new THREE.Vector3(Math.sin(0), 0, Math.cos(0)); // Orientación aproximada
+    const forward = new THREE.Vector3(Math.sin(0), 0, Math.cos(0));
     vfxSystem.createCannonBlast(new THREE.Vector3(evt.x, 2.5, evt.z), forward);
   } else if (evt.type === 'cannon_hit') {
     audioEngine.playHullHit(evt);
     vfxSystem.createHullHit(evt.x, evt.y, evt.z, evt.damage);
+  } else if (evt.type === 'ship_collision') {
+    audioEngine.playHullHit(evt);
+    vfxSystem.createWoodCollisionCrash(new THREE.Vector3(evt.x, 2.5, evt.z));
+    addCombatFeed(`💥 ¡EMBESTIDA! ${evt.playerA} y ${evt.playerB} chocaron (-30% VIDA)!`);
+  } else if (evt.type === 'chest_collected') {
+    if (evt.subType === 'health') {
+      vfxSystem.createHealingSparkles(new THREE.Vector3(evt.x, 2.0, evt.z));
+      addCombatFeed(`💚 ¡${evt.playerName} recogió un Botín de Curación (+35 HP)!`);
+    } else {
+      vfxSystem.createSpecialDetonation(evt.x, 2, evt.z, 'cluster_bomb');
+      addCombatFeed(`⚡ ¡${evt.playerName} recargó munición especial (+1 Bomba)!`);
+    }
   } else if (evt.type === 'water_splash') {
     audioEngine.playWaterSplash(evt);
     vfxSystem.createWaterSplash(evt.x, evt.z);
@@ -344,6 +407,13 @@ function setupInputListeners() {
       const deltaX = e.clientX - previousMouseX;
       customizerOrbitAngle += deltaX * 0.015;
       previousMouseX = e.clientX;
+      customizerView = 'orbit';
+
+      const orbitBtn = document.querySelector('#customizer-view-buttons .btn-view[data-view="orbit"]');
+      if (orbitBtn) {
+        document.querySelectorAll('#customizer-view-buttons .btn-view').forEach((b) => b.classList.remove('active'));
+        orbitBtn.classList.add('active');
+      }
     }
   });
 }
@@ -373,6 +443,19 @@ function setupUIEventListeners() {
     await audioEngine.init();
     switchState(STATES.CUSTOMIZER);
   });
+
+  // Editor: Selector de Vistas de Cámara del Barco
+  const viewButtonsContainer = document.getElementById('customizer-view-buttons');
+  if (viewButtonsContainer) {
+    viewButtonsContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-view');
+      if (btn && btn.dataset.view) {
+        customizerView = btn.dataset.view;
+        Array.from(viewButtonsContainer.querySelectorAll('.btn-view')).forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+    });
+  }
 
   // Inicio: Abrir Leaderboard
   document.getElementById('btn-open-leaderboard-menu').addEventListener('click', () => {
@@ -634,20 +717,48 @@ function animate(now) {
     camera.position.z = Math.sin(menuAngle) * 160;
     camera.lookAt(0, 10, 0);
   } else if (currentState === STATES.CUSTOMIZER) {
-    // Visualización en el astillero
+    // Visualización en el astillero (Aguas abiertas y despejadas)
     if (previewShipMesh) {
-      const waveY = getLakeWaveHeight(0, 0, timeSeconds);
-      previewShipMesh.position.y = waveY * 0.5;
-      previewShipMesh.rotation.z = Math.sin(timeSeconds * 1.2) * 0.04;
-      previewShipMesh.rotation.x = Math.cos(timeSeconds * 1.5) * 0.03;
+      const waveY = getLakeWaveHeight(CUSTOMIZER_SHIP_POS.x, CUSTOMIZER_SHIP_POS.z, timeSeconds);
+      previewShipMesh.position.y = CUSTOMIZER_SHIP_POS.y + waveY * 0.45;
+      previewShipMesh.rotation.z = Math.sin(timeSeconds * 1.2) * 0.035;
+      previewShipMesh.rotation.x = Math.cos(timeSeconds * 1.5) * 0.025;
     }
 
-    const dist = 36;
-    camera.position.x = Math.sin(customizerOrbitAngle) * dist;
-    camera.position.z = Math.cos(customizerOrbitAngle) * dist;
-    camera.position.y = 12;
-    camera.lookAt(0, 4, 0);
-  } else if (currentState === STATES.COMBAT) {
+    // Control de Vistas de Cámara del Editor
+    let targetCamX = CUSTOMIZER_SHIP_POS.x;
+    let targetCamY = 12;
+    let targetCamZ = CUSTOMIZER_SHIP_POS.z;
+
+    if (customizerView === 'orbit') {
+      const dist = 38;
+      targetCamX = CUSTOMIZER_SHIP_POS.x + Math.sin(customizerOrbitAngle) * dist;
+      targetCamZ = CUSTOMIZER_SHIP_POS.z + Math.cos(customizerOrbitAngle) * dist;
+      targetCamY = 12;
+    } else if (customizerView === 'side') {
+      targetCamX = CUSTOMIZER_SHIP_POS.x + 38;
+      targetCamY = 9;
+      targetCamZ = CUSTOMIZER_SHIP_POS.z;
+    } else if (customizerView === 'front') {
+      targetCamX = CUSTOMIZER_SHIP_POS.x;
+      targetCamY = 9;
+      targetCamZ = CUSTOMIZER_SHIP_POS.z + 38;
+    } else if (customizerView === 'back') {
+      targetCamX = CUSTOMIZER_SHIP_POS.x;
+      targetCamY = 13;
+      targetCamZ = CUSTOMIZER_SHIP_POS.z - 38;
+    } else if (customizerView === 'top') {
+      targetCamX = CUSTOMIZER_SHIP_POS.x + 0.1;
+      targetCamY = 46;
+      targetCamZ = CUSTOMIZER_SHIP_POS.z + 5;
+    }
+
+    camera.position.x += (targetCamX - camera.position.x) * (dt * 6.0);
+    camera.position.y += (targetCamY - camera.position.y) * (dt * 6.0);
+    camera.position.z += (targetCamZ - camera.position.z) * (dt * 6.0);
+    camera.lookAt(CUSTOMIZER_SHIP_POS.x, CUSTOMIZER_SHIP_POS.y + 4.5, CUSTOMIZER_SHIP_POS.z);
+  }
+ else if (currentState === STATES.COMBAT) {
     // Estado de Combate en Vivo con Snapshot Interpolation
     const state = networkClient.getInterpolatedState();
 
@@ -675,6 +786,22 @@ function animate(now) {
             if (localShipFoamRing) {
               localShipFoamRing.position.set(p.x, waveH + 0.15, p.z);
               localShipFoamRing.rotation.z = timeSeconds * 0.5;
+            }
+          }
+
+            // Deterioro Visual Dinámico del Barco Local
+            const hpRatio = p.health / p.maxHealth;
+            if (hpRatio <= 0.75 && hpRatio > 0.40) {
+              if (Math.random() < 0.22) {
+                vfxSystem.createShipDamageSmoke(localPlayerShipMesh.position, 1.0);
+              }
+            } else if (hpRatio <= 0.40 && p.health > 0) {
+              if (Math.random() < 0.32) {
+                vfxSystem.createShipDeckFire(localPlayerShipMesh.position);
+              }
+              // Escora e inclinación por entrada de agua
+              localPlayerShipMesh.position.y -= (0.40 - hpRatio) * 2.2;
+              localPlayerShipMesh.rotation.z += 0.08;
             }
           }
 
@@ -738,6 +865,20 @@ function animate(now) {
           enemyObj.mesh.rotation.z = Math.sin(timeSeconds * 2.0 + p.x) * 0.05;
 
           enemyObj.foamRing.position.set(p.x, waveH + 0.15, p.z);
+
+          // Deterioro visual de barcos enemigos
+          const enemyHpRatio = p.health / p.maxHealth;
+          if (enemyHpRatio <= 0.75 && enemyHpRatio > 0.40) {
+            if (Math.random() < 0.2) {
+              vfxSystem.createShipDamageSmoke(enemyObj.mesh.position, 1.0);
+            }
+          } else if (enemyHpRatio <= 0.40 && p.health > 0) {
+            if (Math.random() < 0.3) {
+              vfxSystem.createShipDeckFire(enemyObj.mesh.position);
+            }
+            enemyObj.mesh.position.y -= (0.40 - enemyHpRatio) * 2.0;
+            enemyObj.mesh.rotation.z += 0.08;
+          }
         }
       });
 
@@ -774,6 +915,32 @@ function animate(now) {
           if (!activeBallIds.has(id)) {
             scene.remove(mesh);
             cannonballMeshes.delete(id);
+          }
+        }
+      }
+
+      // 4. Renderizado y Animación de Cofres Flotantes
+      if (state.chests) {
+        const activeChestIds = new Set();
+        state.chests.forEach((c) => {
+          activeChestIds.add(c.id);
+          let chestObj = chestMeshes.get(c.id);
+          if (!chestObj) {
+            chestObj = createChestVisualMesh(c.type);
+            scene.add(chestObj.group);
+            chestMeshes.set(c.id, chestObj);
+          }
+
+          const waveH = getLakeWaveHeight(c.x, c.z, timeSeconds);
+          chestObj.group.position.set(c.x, waveH + 0.3, c.z);
+          chestObj.group.rotation.y = timeSeconds * 0.8;
+          chestObj.beam.material.opacity = 0.35 + Math.sin(timeSeconds * 4.0 + c.id) * 0.15;
+        });
+
+        for (const [id, chestObj] of chestMeshes.entries()) {
+          if (!activeChestIds.has(id)) {
+            scene.remove(chestObj.group);
+            chestMeshes.delete(id);
           }
         }
       }

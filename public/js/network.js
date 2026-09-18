@@ -196,11 +196,12 @@ class NetworkClient {
       });
     });
 
-    // Proyectiles (Balas de cañón)
+    // Proyectiles y Cofres Flotantes
     return {
       timestamp: renderTime,
       players: interpolatedPlayers,
       cannonballs: s1.cannonballs,
+      chests: s1.chests || [],
     };
   }
 }

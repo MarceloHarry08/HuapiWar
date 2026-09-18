@@ -190,6 +190,43 @@ const CHASSIS_SPECS = {
   monitor: { speed: 26, turnRate: 0.85, health: 160, drag: 0.94 },
 };
 
+// -------------------------------------------------------------
+// Floating Chests System (Cofres Flotantes de Salud y Bombas)
+// -------------------------------------------------------------
+const floatingChests = [];
+let chestIdCounter = 1;
+
+function generateChest(id) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 90 + Math.random() * (MAP_RADIUS - 160);
+  const x = Number((Math.cos(angle) * dist).toFixed(1));
+  const z = Number((Math.sin(angle) * dist).toFixed(1));
+
+  // Verificar que no aparezca dentro de una isla
+  for (const island of ISLANDS) {
+    if (Math.hypot(x - island.x, z - island.z) < island.radius + 18) {
+      return generateChest(id);
+    }
+  }
+
+  return {
+    id: id || chestIdCounter++,
+    x,
+    z,
+    type: Math.random() > 0.4 ? 'health' : 'ammo', // 60% salud, 40% bombas especiales
+    active: true,
+    respawnTimer: 0,
+  };
+}
+
+// Generar 18 cofres iniciales a lo largo del lago
+for (let i = 0; i < 18; i++) {
+  floatingChests.push(generateChest());
+}
+
+// Cooldown de embestidas entre barcos
+const ramCooldowns = new Map();
+
 function getRandomSpawn() {
   const angle = Math.random() * Math.PI * 2;
   const dist = 180 + Math.random() * (MAP_RADIUS - 280);
@@ -421,11 +458,11 @@ io.on('connection', (socket) => {
         vx,
         vy,
         vz,
-        radius: 1.2,
-        damage: 18 + Math.floor(Math.random() * 8),
+        radius: 1.5,
+        damage: 12 + Math.floor(Math.random() * 6), // Daño moderado para duelos estratégicos
         isSpecial: false,
         specialType: null,
-        lifetime: 3.5,
+        lifetime: 3.8,
       });
     };
 
@@ -602,10 +639,11 @@ setInterval(() => {
       if (target.id === ball.ownerId || target.health <= 0) continue;
 
       const dist = Math.hypot(ball.x - target.x, ball.z - target.z);
-      const hitThreshold = target.chassis === 'galleon' || target.chassis === 'monitor' ? 7.5 : 5.8;
+      // Rango de golpe ampliado y más generoso
+      const hitThreshold = target.chassis === 'galleon' || target.chassis === 'monitor' ? 12.5 : 10.8;
 
-      // Hit detected
-      if (dist < hitThreshold && ball.y <= 4.0 && ball.y >= -1.0) {
+      // Hit detected (rango vertical y horizontal amplio)
+      if (dist < hitThreshold && ball.y <= 6.0 && ball.y >= -2.0) {
         hitOccurred = true;
         target.health = Math.max(0, target.health - ball.damage);
 
@@ -685,7 +723,140 @@ setInterval(() => {
     }
   }
 
-  // 3. Broadcast Snapshot to all connected clients
+  // 3. Sistema de Embestida / Colisión entre Barcos (30% de Daño a Ambos)
+  const playerList = Array.from(activePlayers.values());
+  for (let i = 0; i < playerList.length; i++) {
+    for (let j = i + 1; j < playerList.length; j++) {
+      const pA = playerList[i];
+      const pB = playerList[j];
+      if (pA.health <= 0 || pB.health <= 0) continue;
+
+      const dist = Math.hypot(pA.x - pB.x, pA.z - pB.z);
+      const collisionThreshold = 11.5;
+
+      if (dist < collisionThreshold) {
+        const pairKey = pA.id < pB.id ? `${pA.id}_${pB.id}` : `${pB.id}_${pA.id}`;
+        const nowMs = Date.now();
+        const lastRam = ramCooldowns.get(pairKey) || 0;
+
+        if (nowMs - lastRam > 2500) { // Cooldown de 2.5s entre colisiones
+          ramCooldowns.set(pairKey, nowMs);
+
+          // 30% de daño estructural sobre la vida máxima de cada barco
+          const dmgA = Math.round(pA.maxHealth * 0.30);
+          const dmgB = Math.round(pB.maxHealth * 0.30);
+
+          pA.health = Math.max(0, pA.health - dmgA);
+          pB.health = Math.max(0, pB.health - dmgB);
+
+          // Separación física por rebote
+          const nx = dist > 0.01 ? (pB.x - pA.x) / dist : 1;
+          const nz = dist > 0.01 ? (pB.z - pA.z) / dist : 0;
+          pA.x -= nx * 6.5;
+          pA.z -= nz * 6.5;
+          pB.x += nx * 6.5;
+          pB.z += nz * 6.5;
+
+          pA.speed *= -0.5;
+          pB.speed *= -0.5;
+
+          gameEvents.push({
+            type: 'ship_collision',
+            x: Number(((pA.x + pB.x) * 0.5).toFixed(1)),
+            z: Number(((pA.z + pB.z) * 0.5).toFixed(1)),
+            playerA: pA.name,
+            playerB: pB.name,
+            damageA: dmgA,
+            damageB: dmgB,
+          });
+
+          // Verificar si alguno de los barcos se hundió por la colisión
+          [pA, pB].forEach((ship, idx) => {
+            const other = idx === 0 ? pB : pA;
+            if (ship.health <= 0) {
+              other.score += 500;
+              other.shipsSunk += 1;
+              io.to(other.id).emit('combat:enemy_sunk', {
+                sunkPlayerName: ship.name,
+                score: other.score,
+                shipsSunk: other.shipsSunk,
+              });
+              gameEvents.push({
+                type: 'ship_sunk',
+                playerId: ship.id,
+                playerName: ship.name,
+                killerId: other.id,
+                x: ship.x,
+                z: ship.z,
+              });
+              io.to(ship.id).emit('combat:destroyed', {
+                finalScore: ship.score,
+                shipsSunk: ship.shipsSunk,
+                shipName: ship.name,
+                faction: ship.faction,
+              });
+              activePlayers.delete(ship.id);
+              promoteNextFromQueue();
+            }
+          });
+        }
+      }
+    }
+  }
+
+  // 4. Actualizar Cofres Flotantes y Detección de Recogida
+  for (const chest of floatingChests) {
+    if (!chest.active) {
+      chest.respawnTimer -= dt;
+      if (chest.respawnTimer <= 0) {
+        const replacement = generateChest(chest.id);
+        chest.x = replacement.x;
+        chest.z = replacement.z;
+        chest.type = replacement.type;
+        chest.active = true;
+      }
+      continue;
+    }
+
+    // Verificar si algún barco pasa sobre el cofre
+    for (const player of activePlayers.values()) {
+      if (player.health <= 0) continue;
+      const d = Math.hypot(player.x - chest.x, player.z - chest.z);
+      if (d < 8.5) {
+        chest.active = false;
+        chest.respawnTimer = 24.0; // Reaparece en 24 segundos
+
+        if (chest.type === 'health') {
+          const healAmount = 35;
+          player.health = Math.min(player.maxHealth, player.health + healAmount);
+          gameEvents.push({
+            type: 'chest_collected',
+            subType: 'health',
+            playerId: player.id,
+            playerName: player.name,
+            x: chest.x,
+            z: chest.z,
+            amount: healAmount,
+            currentHealth: player.health,
+          });
+        } else {
+          player.specialsRemaining = Math.min(3, player.specialsRemaining + 1);
+          gameEvents.push({
+            type: 'chest_collected',
+            subType: 'ammo',
+            playerId: player.id,
+            playerName: player.name,
+            x: chest.x,
+            z: chest.z,
+            specialsRemaining: player.specialsRemaining,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  // 5. Broadcast Snapshot to all connected clients
   const snapshot = {
     timestamp: now,
     players: Array.from(activePlayers.values()).map((p) => p.toJSON()),
@@ -696,6 +867,12 @@ setInterval(() => {
       z: Number(b.z.toFixed(2)),
       isSpecial: b.isSpecial,
       specialType: b.specialType,
+    })),
+    chests: floatingChests.filter((c) => c.active).map((c) => ({
+      id: c.id,
+      x: c.x,
+      z: c.z,
+      type: c.type,
     })),
     events: [...gameEvents],
   };
