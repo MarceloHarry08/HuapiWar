@@ -787,7 +787,6 @@ function animate(now) {
               localShipFoamRing.position.set(p.x, waveH + 0.15, p.z);
               localShipFoamRing.rotation.z = timeSeconds * 0.5;
             }
-          }
 
             // Deterioro Visual Dinámico del Barco Local
             const hpRatio = p.health / p.maxHealth;
