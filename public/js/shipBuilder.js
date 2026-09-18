@@ -306,6 +306,100 @@ function createCannonMesh(cannonType = 'bronze') {
 }
 
 /**
+ * Utilidades para derivar tonos de resaltado y sombras de maderas personalizadas
+ */
+function hexToRgb(hex = '#4a2b13') {
+  let c = hex.replace('#', '');
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  const num = parseInt(c, 16) || 0;
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+function rgbToHex(r, g, b) {
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  return '#' + [clamp(r), clamp(g), clamp(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function getWoodColorPalette(baseHex = '#4a2b13') {
+  const { r, g, b } = hexToRgb(baseHex);
+  const highlight = rgbToHex(r * 1.35 + 22, g * 1.35 + 22, b * 1.35 + 22);
+  const dark = rgbToHex(r * 0.52, g * 0.52, b * 0.52);
+  return { baseHex, highlightHex: highlight, darkHex: dark };
+}
+
+/**
+ * Crea un rótulo flotante 3D (THREE.Sprite) sobre el mástil mayor del barco
+ * con opacidad (~0.85), icono de facción y el nombre del navío legible para todos los rivales.
+ */
+export function createFloatingNameplateSprite(name = 'Furia del Nahuel', faction = 'Argentinos') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 140;
+  const ctx = canvas.getContext('2d');
+
+  // Fondo estilizado tipo estandarte náutico con esquinas redondeadas
+  ctx.fillStyle = 'rgba(6, 18, 34, 0.78)';
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(14, 14, 484, 112, 22);
+    ctx.fill();
+  } else {
+    ctx.fillRect(14, 14, 484, 112);
+  }
+
+  // Borde ornamental dorado
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = '#d4a853';
+  ctx.stroke();
+
+  // Filete interior fino
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255, 243, 196, 0.7)';
+  ctx.strokeRect(20, 20, 472, 100);
+
+  // Icono/bandera de la facción
+  const factionIcons = {
+    'Argentinos': '🇦🇷',
+    'Piratas': '☠️',
+    'Españoles': '🇪🇸',
+    'Portugueses': '🇵🇹',
+    'Franceses': '🇫🇷',
+  };
+  const icon = factionIcons[faction] || '⚓';
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 34px "Cinzel", "Montserrat", serif';
+
+  const cleanName = (name || 'Capitán').toUpperCase();
+  const labelText = `${icon}  ${cleanName}  ${icon}`;
+
+  // Sombra proyectada para máxima legibilidad sobre el cielo y montañas
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+  ctx.fillText(labelText, 256 + 2, 70 + 3);
+
+  // Texto dorado luminoso
+  ctx.fillStyle = '#ffd166';
+  ctx.fillText(labelText, 256, 70);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.generateMipmaps = true;
+
+  const spriteMaterial = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.86,
+    depthTest: true,
+    depthWrite: false,
+  });
+
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.scale.set(12, 3.3, 1);
+  sprite.name = 'FloatingNameplate';
+  return sprite;
+}
+
+/**
  * Genera la geometría y mallas completas del navío 3D
  */
 export function buildShipMesh(config = {}) {
@@ -316,14 +410,23 @@ export function buildShipMesh(config = {}) {
     cannon = 'bronze',
     specialWeapon = 'greek_fire',
     hudColor = '#00e5ff',
+    shipColor = '#4a2b13',
+    lanternColor = '#ffd166',
+    hasLanterns = true,
   } = config;
 
   const shipRoot = new THREE.Group();
   shipRoot.name = 'ShipContainer';
 
-  // Texturas de madera y tela
-  const hullWoodTex = createPainterlyWoodTexture('#4a2b13', '#6b401f', '#241407');
-  const deckWoodTex = createPainterlyWoodTexture('#704f2d', '#916b43', '#3d2813');
+  // Texturas de madera y tela según el color personalizado del usuario
+  const hullPalette = getWoodColorPalette(shipColor);
+  const hullWoodTex = createPainterlyWoodTexture(hullPalette.baseHex, hullPalette.highlightHex, hullPalette.darkHex);
+
+  const deckRgb = hexToRgb(shipColor);
+  const deckBase = rgbToHex(deckRgb.r * 1.25 + 15, deckRgb.g * 1.25 + 15, deckRgb.b * 1.25 + 15);
+  const deckPalette = getWoodColorPalette(deckBase);
+  const deckWoodTex = createPainterlyWoodTexture(deckPalette.baseHex, deckPalette.highlightHex, deckPalette.darkHex);
+
   const sailTex = createFactionSailTexture(faction);
   const nameplateTex = createShipNameCanvasTexture(name, faction);
 
@@ -342,17 +445,16 @@ export function buildShipMesh(config = {}) {
   });
 
   // Material de las Velas con Subsurface Scattering (SSS) simulado
-  // Translucidez a contraluz con color cálido dorado
   const sailMaterial = new THREE.MeshStandardMaterial({
     map: sailTex,
     roughness: 0.9,
     metalness: 0.0,
     side: THREE.DoubleSide,
     emissive: new THREE.Color(0xfff0d0),
-    emissiveIntensity: 0.12, // Resplandor translúcido solar
+    emissiveIntensity: 0.12,
   });
 
-  // Material de la Placa del Nombre
+  // Material de la Placa del Nombre en el Casco
   const nameplateMaterial = new THREE.MeshStandardMaterial({
     map: nameplateTex,
     roughness: 0.4,
@@ -441,17 +543,6 @@ export function buildShipMesh(config = {}) {
     aftMesh.position.set(0, hullDepth * 0.5 + aftCastleHeight * 0.5, -hullLength * 0.3);
     aftMesh.castShadow = true;
     shipRoot.add(aftMesh);
-
-    // Ventanales y farol de popa
-    const lanternGeom = new THREE.DodecahedronGeometry(0.4);
-    const lanternMat = new THREE.MeshStandardMaterial({
-      color: 0xffaa33,
-      emissive: 0xff9900,
-      emissiveIntensity: 1.5,
-    });
-    const lanternMesh = new THREE.Mesh(lanternGeom, lanternMat);
-    lanternMesh.position.set(0, hullDepth * 0.5 + aftCastleHeight + 0.4, -hullLength * 0.48);
-    shipRoot.add(lanternMesh);
   } else {
     // Monitor Acorazado: Chimenea a vapor y torreta blindada cilíndrica
     const turretGeom = new THREE.CylinderGeometry(2.4, 2.6, 1.8, 14);
@@ -584,6 +675,69 @@ export function buildShipMesh(config = {}) {
     shipRoot.add(cannonLeft);
   }
 
+  // 5. FAROLES Y LUCES DE NAVEGACIÓN (Interactivos con color y PointLight 3D)
+  if (hasLanterns) {
+    const lightCol = new THREE.Color(lanternColor);
+    const lanternMat = new THREE.MeshStandardMaterial({
+      color: lightCol,
+      emissive: lightCol,
+      emissiveIntensity: 3.5,
+      roughness: 0.2,
+      metalness: 0.4,
+    });
+    const brassFrameMat = new THREE.MeshStandardMaterial({
+      color: 0x1f170c,
+      metalness: 0.9,
+      roughness: 0.35,
+    });
+
+    const createLanternObject = (withLight = true, lightIntensity = 2.0, lightDist = 24) => {
+      const g = new THREE.Group();
+      const frame = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.65, 6), brassFrameMat);
+      g.add(frame);
+      const core = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22), lanternMat);
+      g.add(core);
+
+      if (withLight) {
+        const pLight = new THREE.PointLight(lightCol, lightIntensity, lightDist, 1.2);
+        pLight.castShadow = false;
+        g.add(pLight);
+      }
+      return g;
+    };
+
+    // Farol de Popa (Gran farol naval de popa)
+    const sternLantern = createLanternObject(true, 2.5, 28);
+    sternLantern.position.set(0, hullDepth * 0.5 + aftCastleHeight + 0.6, -hullLength * 0.48);
+    shipRoot.add(sternLantern);
+
+    // Faroles de Proa (babor y estribor)
+    const bowLanternLeft = createLanternObject(false);
+    bowLanternLeft.position.set(-hullWidth * 0.32, hullDepth * 0.5 + 0.85, hullLength * 0.42);
+    shipRoot.add(bowLanternLeft);
+
+    const bowLanternRight = createLanternObject(true, 1.8, 22);
+    bowLanternRight.position.set(hullWidth * 0.32, hullDepth * 0.5 + 0.85, hullLength * 0.42);
+    shipRoot.add(bowLanternRight);
+
+    // Farol en mástil mayor
+    if (mastPositions.length > 0) {
+      const mastL = createLanternObject(true, 1.6, 20);
+      const mIdx = Math.floor(mastPositions.length / 2);
+      const mHeight = 15 + (mIdx === 1 && mastCount === 3 ? 3 : 0) - (chassis === 'monitor' ? 6 : 0);
+      mastL.position.set(0, mHeight * 0.68 + 1.2, mastPositions[mIdx] + 0.6);
+      shipRoot.add(mastL);
+    }
+  }
+
+  // 6. RÓTULO 3D FLOTANTE SOBRE EL MÁSTIL CON OPACIDAD (Visible para todos los rivales)
+  const floatingSprite = createFloatingNameplateSprite(name, faction);
+  const maxMastHeight = mastPositions.length > 0
+    ? (15 + (mastCount === 3 ? 3 : 0) - (chassis === 'monitor' ? 6 : 0))
+    : (hullDepth + 8);
+  floatingSprite.position.set(0, maxMastHeight + 4.8, 0);
+  shipRoot.add(floatingSprite);
+
   // Guardar metadata en el objeto para consultas rápidas
   shipRoot.userData = {
     name,
@@ -592,6 +746,10 @@ export function buildShipMesh(config = {}) {
     cannon,
     specialWeapon,
     hudColor,
+    shipColor,
+    lanternColor,
+    hasLanterns,
+    floatingSprite,
   };
 
   return shipRoot;

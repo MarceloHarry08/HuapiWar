@@ -30,7 +30,13 @@ let currentShipConfig = {
   cannon: 'bronze',
   special_weapon: 'greek_fire',
   hud_color: '#00e5ff',
+  ship_color: '#4a2b13',
+  lantern_color: '#ffd166',
+  has_lanterns: true,
 };
+
+let cachedSavedShips = [];
+let hasHandledGameOver = false;
 
 // Referencias Three.js
 let scene, camera, renderer, waterSystem, envSystem, vfxSystem;
@@ -190,6 +196,9 @@ function createOrUpdatePreviewShip() {
     cannon: currentShipConfig.cannon,
     specialWeapon: currentShipConfig.special_weapon,
     hudColor: currentShipConfig.hud_color,
+    shipColor: currentShipConfig.ship_color,
+    lanternColor: currentShipConfig.lantern_color,
+    hasLanterns: currentShipConfig.has_lanterns,
   });
 
   // Posicionar en aguas abiertas despejadas del Nahuel Huapi
@@ -214,6 +223,8 @@ function randomizeShip() {
   const cannonList = ['bronze', 'pivot', 'carronade', 'culverin', 'mortar'];
   const specialList = ['greek_fire', 'cluster_bomb', 'torpedo', 'grape_shot', 'seismic_charge'];
   const hudList = ['#00e5ff', '#ffd166', '#ff3366', '#10b981', '#a855f7'];
+  const woodList = ['#4a2b13', '#8a5d3b', '#5c1d1d', '#1c1c24', '#1e3a5f', '#223d2e'];
+  const lanternList = ['#ffd166', '#ff4422', '#10b981', '#38bdf8', '#c084fc', '#f8fafc'];
 
   const randomNames = [
     'El Orgullo de Nicole',
@@ -233,6 +244,9 @@ function randomizeShip() {
     cannon: cannonList[Math.floor(Math.random() * cannonList.length)],
     special_weapon: specialList[Math.floor(Math.random() * specialList.length)],
     hud_color: hudList[Math.floor(Math.random() * hudList.length)],
+    ship_color: woodList[Math.floor(Math.random() * woodList.length)],
+    lantern_color: lanternList[Math.floor(Math.random() * lanternList.length)],
+    has_lanterns: true,
   };
 
   // Sincronizar UI del editor
@@ -245,7 +259,9 @@ function updateEditorActiveButtons() {
     const container = document.getElementById(containerId);
     if (!container) return;
     Array.from(container.children).forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.value === value);
+      if (btn.dataset.value) {
+        btn.classList.toggle('active', btn.dataset.value === value);
+      }
     });
   };
 
@@ -254,6 +270,33 @@ function updateEditorActiveButtons() {
   setActive('cannon-options', currentShipConfig.cannon);
   setActive('special-options', currentShipConfig.special_weapon);
   setActive('hud-color-options', currentShipConfig.hud_color);
+
+  // Maderas del Casco
+  const woodContainer = document.getElementById('ship-wood-options');
+  if (woodContainer) {
+    const curWood = (currentShipConfig.ship_color || '#4a2b13').toLowerCase();
+    Array.from(woodContainer.querySelectorAll('.color-swatch-btn')).forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.color.toLowerCase() === curWood);
+    });
+    const customWoodInput = document.getElementById('input-custom-wood-color');
+    if (customWoodInput) customWoodInput.value = currentShipConfig.ship_color || '#4a2b13';
+  }
+
+  // Luces y Faroles
+  const checkLanterns = document.getElementById('check-ship-lanterns');
+  if (checkLanterns) checkLanterns.checked = currentShipConfig.has_lanterns !== false;
+
+  const lanternContainer = document.getElementById('ship-lantern-options');
+  if (lanternContainer) {
+    lanternContainer.style.opacity = checkLanterns && checkLanterns.checked ? '1.0' : '0.4';
+    lanternContainer.style.pointerEvents = checkLanterns && checkLanterns.checked ? 'auto' : 'none';
+    const curLantern = (currentShipConfig.lantern_color || '#ffd166').toLowerCase();
+    Array.from(lanternContainer.querySelectorAll('.color-swatch-btn')).forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.color.toLowerCase() === curLantern);
+    });
+    const customLanternInput = document.getElementById('input-custom-lantern-color');
+    if (customLanternInput) customLanternInput.value = currentShipConfig.lantern_color || '#ffd166';
+  }
 }
 
 // -------------------------------------------------------------
@@ -299,6 +342,10 @@ networkClient.onPlayerLeft = (id) => {
     scene.remove(enemy.foamRing);
     enemyShipMeshes.delete(id);
   }
+};
+
+networkClient.onPlayerDestroyed = (data) => {
+  handlePlayerDefeat(data);
 };
 
 networkClient.onEvent = (evt) => {
@@ -462,9 +509,9 @@ function setupUIEventListeners() {
     openLeaderboardModal();
   });
 
-  // Editor: Nombre del Barco
+  // Editor: Nombre del Barco (actualización en vivo de casco y rótulo 3D)
   document.getElementById('input-ship-name').addEventListener('input', (e) => {
-    currentShipConfig.name = e.target.value || 'Navío';
+    currentShipConfig.name = e.target.value.trim() || 'Furia del Nahuel';
     createOrUpdatePreviewShip();
   });
 
@@ -486,6 +533,61 @@ function setupUIEventListeners() {
     }
   });
 
+  // Editor: Color de la Madera del Casco
+  const woodOptions = document.getElementById('ship-wood-options');
+  if (woodOptions) {
+    woodOptions.addEventListener('click', (e) => {
+      const swatch = e.target.closest('.color-swatch-btn');
+      if (swatch && swatch.dataset.color) {
+        currentShipConfig.ship_color = swatch.dataset.color;
+        updateEditorActiveButtons();
+        createOrUpdatePreviewShip();
+      }
+    });
+  }
+
+  const customWoodInput = document.getElementById('input-custom-wood-color');
+  if (customWoodInput) {
+    customWoodInput.addEventListener('input', (e) => {
+      currentShipConfig.ship_color = e.target.value;
+      updateEditorActiveButtons();
+      createOrUpdatePreviewShip();
+    });
+  }
+
+  // Editor: Buscador de Barcos Guardados
+  const searchShipsInput = document.getElementById('input-search-ships');
+  if (searchShipsInput) {
+    searchShipsInput.addEventListener('input', (e) => {
+      populateSavedShipsSelect(e.target.value);
+    });
+  }
+
+  // Editor: Selector de Barcos Guardados
+  const selectSavedShips = document.getElementById('select-saved-ships');
+  if (selectSavedShips) {
+    selectSavedShips.addEventListener('change', (e) => {
+      const opt = e.target.selectedOptions[0];
+      if (opt && opt.dataset.ship) {
+        const s = JSON.parse(opt.dataset.ship);
+        currentShipConfig = {
+          name: s.name,
+          chassis: s.chassis,
+          faction: s.faction,
+          cannon: s.cannon,
+          special_weapon: s.special_weapon,
+          hud_color: s.hud_color,
+          ship_color: s.ship_color || '#4a2b13',
+          lantern_color: s.lantern_color || '#ffd166',
+          has_lanterns: s.has_lanterns !== undefined ? Boolean(s.has_lanterns) : true,
+        };
+        document.getElementById('input-ship-name').value = s.name;
+        updateEditorActiveButtons();
+        createOrUpdatePreviewShip();
+      }
+    });
+  }
+
   // Editor: Cañones
   document.getElementById('cannon-options').addEventListener('click', (e) => {
     if (e.target.dataset.value) {
@@ -503,6 +605,37 @@ function setupUIEventListeners() {
       createOrUpdatePreviewShip();
     }
   });
+
+  // Editor: Luces y Faroles
+  const checkLanterns = document.getElementById('check-ship-lanterns');
+  if (checkLanterns) {
+    checkLanterns.addEventListener('change', (e) => {
+      currentShipConfig.has_lanterns = e.target.checked;
+      updateEditorActiveButtons();
+      createOrUpdatePreviewShip();
+    });
+  }
+
+  const lanternOptions = document.getElementById('ship-lantern-options');
+  if (lanternOptions) {
+    lanternOptions.addEventListener('click', (e) => {
+      const swatch = e.target.closest('.color-swatch-btn');
+      if (swatch && swatch.dataset.color) {
+        currentShipConfig.lantern_color = swatch.dataset.color;
+        updateEditorActiveButtons();
+        createOrUpdatePreviewShip();
+      }
+    });
+  }
+
+  const customLanternInput = document.getElementById('input-custom-lantern-color');
+  if (customLanternInput) {
+    customLanternInput.addEventListener('input', (e) => {
+      currentShipConfig.lantern_color = e.target.value;
+      updateEditorActiveButtons();
+      createOrUpdatePreviewShip();
+    });
+  }
 
   // Editor: Color HUD
   document.getElementById('hud-color-options').addEventListener('click', (e) => {
@@ -549,7 +682,7 @@ function setupUIEventListeners() {
     location.reload();
   });
 
-  // Game Over: Guardar en Tabla de Líderes SQLite
+  // Game Over: Actualizar Nombre en Tabla de Líderes SQLite
   document.getElementById('btn-save-leaderboard').addEventListener('click', async () => {
     const playerName = document.getElementById('input-leaderboard-name').value.trim();
     if (!playerName) {
@@ -571,12 +704,26 @@ function setupUIEventListeners() {
       });
 
       if (res.ok) {
-        openLeaderboardModal();
+        const autoSaveBadge = document.getElementById('game-over-autosave-badge');
+        if (autoSaveBadge) {
+          autoSaveBadge.innerHTML = `<span>✅ ¡Puntuación actualizada como <strong>${escapeHtml(playerName)}</strong>!</span>`;
+        }
+        await loadGameOverLeaderboardPreview();
       }
     } catch (e) {
       console.warn(e);
     }
   });
+
+  // Game Over: Zarpar de nuevo (Revivir)
+  const btnRespawn = document.getElementById('btn-game-over-respawn');
+  if (btnRespawn) {
+    btnRespawn.addEventListener('click', () => {
+      hasHandledGameOver = false;
+      networkClient.connect();
+      networkClient.joinMatch(currentShipConfig);
+    });
+  }
 
   document.getElementById('btn-game-over-menu').addEventListener('click', () => {
     location.reload();
@@ -592,42 +739,124 @@ function setupUIEventListeners() {
 }
 
 // -------------------------------------------------------------
+function populateSavedShipsSelect(filterText = '') {
+  const select = document.getElementById('select-saved-ships');
+  if (!select) return;
+  select.innerHTML = '<option value="">-- Seleccionar de la Base de Datos --</option>';
+  const query = (filterText || '').toLowerCase().trim();
+  const filtered = query
+    ? cachedSavedShips.filter((s) => {
+        const name = (s.name || '').toLowerCase();
+        const faction = (s.faction || '').toLowerCase();
+        const chassis = (s.chassis || '').toLowerCase();
+        return name.includes(query) || faction.includes(query) || chassis.includes(query);
+      })
+    : cachedSavedShips;
+
+  filtered.forEach((s) => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = `${s.name} (${s.faction} - ${s.chassis})`;
+    opt.dataset.ship = JSON.stringify(s);
+    select.appendChild(opt);
+  });
+}
+
 // Consultas REST SQLite (Barcos Guardados y Leaderboard)
 // -------------------------------------------------------------
 async function loadSavedShipsDropdown() {
   try {
     const res = await fetch('/api/ships');
-    const ships = await res.json();
-    const select = document.getElementById('select-saved-ships');
-    select.innerHTML = '<option value="">-- Seleccionar de la Base de Datos --</option>';
-
-    ships.forEach((s) => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = `${s.name} (${s.faction} - ${s.chassis})`;
-      opt.dataset.ship = JSON.stringify(s);
-      select.appendChild(opt);
-    });
-
-    select.addEventListener('change', (e) => {
-      const opt = e.target.selectedOptions[0];
-      if (opt && opt.dataset.ship) {
-        const s = JSON.parse(opt.dataset.ship);
-        currentShipConfig = {
-          name: s.name,
-          chassis: s.chassis,
-          faction: s.faction,
-          cannon: s.cannon,
-          special_weapon: s.special_weapon,
-          hud_color: s.hud_color,
-        };
-        document.getElementById('input-ship-name').value = s.name;
-        updateEditorActiveButtons();
-        createOrUpdatePreviewShip();
-      }
-    });
+    cachedSavedShips = await res.json();
+    const searchInput = document.getElementById('input-search-ships');
+    const query = searchInput ? searchInput.value : '';
+    populateSavedShipsSelect(query);
   } catch (err) {
     console.warn('[-] No se pudieron cargar los barcos guardados:', err);
+  }
+}
+
+async function handlePlayerDefeat(data = {}) {
+  if (hasHandledGameOver && currentState === STATES.GAMEOVER) return;
+  hasHandledGameOver = true;
+
+  const finalScore = data.finalScore !== undefined ? data.finalScore : (localPlayerData ? localPlayerData.score : 0);
+  const finalSunk = data.shipsSunk !== undefined ? data.shipsSunk : (localPlayerData ? localPlayerData.shipsSunk : 0);
+  const shipName = data.shipName || currentShipConfig.name || 'Barco Patagónico';
+  const faction = data.faction || currentShipConfig.faction || 'Argentinos';
+
+  document.getElementById('game-over-modal-title').textContent = 'Perdiste esta batalla, guarda tu posición en la tabla';
+  document.getElementById('game-over-score').textContent = finalScore;
+  document.getElementById('game-over-sunk-count').textContent = `Barcos Hundidos: ${finalSunk}`;
+
+  const currentInputVal = document.getElementById('input-leaderboard-name').value.trim();
+  const defaultCaptainName = currentInputVal || shipName;
+  document.getElementById('input-leaderboard-name').value = defaultCaptainName;
+
+  const autoSaveBadge = document.getElementById('game-over-autosave-badge');
+  if (autoSaveBadge) {
+    autoSaveBadge.innerHTML = '<span>💾 Guardando automáticamente en la base de datos...</span>';
+    autoSaveBadge.style.display = 'inline-flex';
+  }
+
+  switchState(STATES.GAMEOVER);
+
+  // Auto-guardado en la base de datos SQLite
+  try {
+    const res = await fetch('/api/leaderboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        player_name: defaultCaptainName,
+        score: finalScore,
+        ships_sunk: finalSunk,
+        ship_name: shipName,
+        faction: faction,
+      }),
+    });
+
+    if (res.ok) {
+      if (autoSaveBadge) {
+        autoSaveBadge.innerHTML = '<span>✅ ¡Puntuación guardada automáticamente en la tabla SQLite!</span>';
+      }
+    }
+  } catch (err) {
+    console.warn('[-] Error en autoguardado de derrota:', err);
+    if (autoSaveBadge) {
+      autoSaveBadge.innerHTML = '<span style="color:#ef4444;">⚠️ No se pudo autoguardar. Usa el botón "Guardar".</span>';
+    }
+  }
+
+  // Cargar vista previa del leaderboard en el modal
+  await loadGameOverLeaderboardPreview();
+}
+
+async function loadGameOverLeaderboardPreview() {
+  const container = document.getElementById('game-over-leaderboard-list');
+  if (!container) return;
+  container.innerHTML = '<div style="color: #94a3b8; font-size: 0.85rem;">Cargando posiciones...</div>';
+
+  try {
+    const res = await fetch('/api/leaderboard');
+    const leaders = await res.json();
+    const top5 = leaders.slice(0, 5);
+
+    if (top5.length === 0) {
+      container.innerHTML = '<div style="color: #94a3b8; font-size: 0.85rem;">Aún no hay registros en la tabla.</div>';
+      return;
+    }
+
+    container.innerHTML = top5.map((l, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
+      return `
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.85rem;">
+          <span><strong>${medal} ${escapeHtml(l.player_name)}</strong> <small style="color:#8ecae6;">(${escapeHtml(l.ship_name || '')})</small></span>
+          <span style="color: #ffd166; font-weight: 700;">${l.score} pts</span>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div style="color: #ef4444; font-size: 0.85rem;">No se pudo cargar la tabla.</div>';
   }
 }
 
@@ -837,9 +1066,12 @@ function animate(now) {
 
           // Comprobar si el barco fue destruido
           if (p.health <= 0) {
-            document.getElementById('game-over-score').textContent = p.score;
-            document.getElementById('game-over-sunk-count').textContent = `Barcos Hundidos: ${p.shipsSunk}`;
-            switchState(STATES.GAMEOVER);
+            handlePlayerDefeat({
+              finalScore: p.score,
+              shipsSunk: p.shipsSunk,
+              shipName: p.name,
+              faction: p.faction,
+            });
           }
         } else {
           // --- BARCOS ENEMIGOS (SNAPSHOT INTERPOLATED) ---

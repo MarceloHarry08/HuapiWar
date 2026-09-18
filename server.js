@@ -49,9 +49,17 @@ db.serialize(() => {
       cannon TEXT NOT NULL,
       special_weapon TEXT NOT NULL,
       hud_color TEXT NOT NULL,
+      ship_color TEXT DEFAULT '#4a2b13',
+      lantern_color TEXT DEFAULT '#ffd166',
+      has_lanterns INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Migraciones para bases de datos existentes
+  db.run(`ALTER TABLE saved_ships ADD COLUMN ship_color TEXT DEFAULT '#4a2b13'`, () => {});
+  db.run(`ALTER TABLE saved_ships ADD COLUMN lantern_color TEXT DEFAULT '#ffd166'`, () => {});
+  db.run(`ALTER TABLE saved_ships ADD COLUMN has_lanterns INTEGER DEFAULT 1`, () => {});
 
   // Table for global leaderboard
   db.run(`
@@ -73,20 +81,16 @@ db.serialize(() => {
         INSERT INTO leaderboard (player_name, score, ships_sunk, ship_name, faction)
         VALUES (?, ?, ?, ?, ?)
       `);
-      const initialHeroes = [
-        ['Capitán Luis Piedrabuena', 3450, 14, 'El Huemul Austral', 'Argentinos'],
-        ['Nicole Comodoro', 2890, 11, 'Furia Patagónica', 'Argentinos'],
-        ['Corsario Barbanegra del Sur', 2420, 9, 'Viento Negro', 'Piratas'],
-        ['Caetano Silva', 1980, 8, 'Orgullo del Plata', 'Portugueses'],
-        ['Almirante Guillermo Brown', 1850, 7, '25 de Mayo', 'Argentinos'],
-        ['Don Rodrigo de Mendoza', 1400, 5, 'Santísima Trinidad', 'Españoles'],
-        ['Capitaine Jean Lafitte', 1120, 4, 'Le Triomphant', 'Franceses'],
+      const defaults = [
+        ['Almirante Brown', 4500, 8, 'Hércules', 'Argentinos'],
+        ['Capitán Barbanegra', 3800, 6, 'Venganza', 'Piratas'],
+        ['Comodoro Nicole', 3100, 5, 'El Orgullo de Nicole', 'Portugueses'],
+        ['Corsario Bouchard', 2750, 4, 'La Argentina', 'Argentinos'],
+        ['Capitán Hook', 1900, 3, 'Jolly Roger', 'Piratas'],
       ];
-      for (const hero of initialHeroes) {
-        stmt.run(hero);
-      }
+      defaults.forEach((d) => stmt.run(d));
       stmt.finalize();
-      console.log('[+] Tabla de líderes inicializada con capitanes legendarios.');
+      console.log('[+] Leaderboard inicial poblado con capitanes destacados.');
     }
   });
 });
@@ -102,13 +106,13 @@ app.get('/api/ships', (req, res) => {
 });
 
 app.post('/api/ships', (req, res) => {
-  const { name, chassis, faction, cannon, special_weapon, hud_color } = req.body;
+  const { name, chassis, faction, cannon, special_weapon, hud_color, ship_color, lantern_color, has_lanterns } = req.body;
   if (!name || !chassis || !faction) {
     return res.status(400).json({ error: 'Faltan campos obligatorios para el barco.' });
   }
   const stmt = db.prepare(`
-    INSERT INTO saved_ships (name, chassis, faction, cannon, special_weapon, hud_color)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO saved_ships (name, chassis, faction, cannon, special_weapon, hud_color, ship_color, lantern_color, has_lanterns)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     [
@@ -118,6 +122,9 @@ app.post('/api/ships', (req, res) => {
       cannon || 'bronze',
       special_weapon || 'greek_fire',
       hud_color || '#00e5ff',
+      ship_color || '#4a2b13',
+      lantern_color || '#ffd166',
+      has_lanterns !== undefined ? (has_lanterns ? 1 : 0) : 1,
     ],
     function (err) {
       if (err) return res.status(500).json({ error: err.message });
@@ -245,8 +252,11 @@ class Player {
     this.chassis = config.chassis || 'brigantine';
     this.faction = config.faction || 'Argentinos';
     this.cannon = config.cannon || 'bronze';
-    this.specialWeapon = config.special_weapon || 'greek_fire';
-    this.hudColor = config.hud_color || '#00e5ff';
+    this.specialWeapon = config.special_weapon || config.specialWeapon || 'greek_fire';
+    this.hudColor = config.hud_color || config.hudColor || '#00e5ff';
+    this.shipColor = config.ship_color || config.shipColor || '#4a2b13';
+    this.lanternColor = config.lantern_color || config.lanternColor || '#ffd166';
+    this.hasLanterns = config.has_lanterns !== undefined ? Boolean(config.has_lanterns) : (config.hasLanterns !== undefined ? Boolean(config.hasLanterns) : true);
 
     const specs = CHASSIS_SPECS[this.chassis] || CHASSIS_SPECS.brigantine;
     this.maxHealth = specs.health;
@@ -362,6 +372,9 @@ class Player {
       cannon: this.cannon,
       specialWeapon: this.specialWeapon,
       hudColor: this.hudColor,
+      shipColor: this.shipColor,
+      lanternColor: this.lanternColor,
+      hasLanterns: this.hasLanterns,
       x: Number(this.x.toFixed(2)),
       y: Number(this.y.toFixed(2)),
       z: Number(this.z.toFixed(2)),

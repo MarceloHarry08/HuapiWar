@@ -96,9 +96,27 @@
         </div>
       </div>
 
-      <!-- Cargar Barco Previo de SQLite -->
+      <!-- Color de la Madera del Casco -->
       <div class="customizer-section">
-        <label class="customizer-label" for="select-saved-ships">Cargar Barco Guardado:</label>
+        <label class="customizer-label">Color de Madera del Casco:</label>
+        <div class="color-picker-row" id="ship-wood-options">
+          <button class="color-swatch-btn active" data-color="#4a2b13" style="background-color: #4a2b13;" title="Roble Patagónico"></button>
+          <button class="color-swatch-btn" data-color="#8a5d3b" style="background-color: #8a5d3b;" title="Pino Nórdico Claro"></button>
+          <button class="color-swatch-btn" data-color="#5c1d1d" style="background-color: #5c1d1d;" title="Caoba Real Rojiza"></button>
+          <button class="color-swatch-btn" data-color="#1c1c24" style="background-color: #1c1c24;" title="Ébano Abisal Negro"></button>
+          <button class="color-swatch-btn" data-color="#1e3a5f" style="background-color: #1e3a5f;" title="Azul Marino Armada"></button>
+          <button class="color-swatch-btn" data-color="#223d2e" style="background-color: #223d2e;" title="Verde Selva Valdiviana"></button>
+          <div class="custom-color-input-wrapper" title="Color de Madera Personalizado">
+            <input type="color" id="input-custom-wood-color" class="custom-color-input" value="#4a2b13">
+            <span style="font-size: 0.78rem; color: #ffd166;">Libre</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cargar Barco Previo de SQLite con Buscador -->
+      <div class="customizer-section">
+        <label class="customizer-label" for="input-search-ships">Cargar Barco Guardado:</label>
+        <input type="text" id="input-search-ships" class="customizer-input-text" placeholder="🔍 Buscar barco por nombre o facción..." style="margin-bottom: 8px; font-size: 0.9rem;">
         <select id="select-saved-ships" class="customizer-input-text" style="cursor: pointer;">
           <option value="">-- Seleccionar de la Base de Datos --</option>
         </select>
@@ -135,9 +153,9 @@
       </div>
     </div>
 
-    <!-- Panel Derecho: Cañones, Bombas y HUD -->
+    <!-- Panel Derecho: Cañones, Bombas, Luces y HUD -->
     <div class="customizer-panel">
-      <h2 class="customizer-header">Armamento y HUD</h2>
+      <h2 class="customizer-header">Armamento y Luces</h2>
 
       <!-- Cañones (5 tipos) -->
       <div class="customizer-section">
@@ -160,6 +178,26 @@
           <button class="option-btn" data-value="torpedo">Torpedo Nahuelito</button>
           <button class="option-btn" data-value="grape_shot">Metralla Ígnea</button>
           <button class="option-btn" data-value="seismic_charge">Carga Sísmica</button>
+        </div>
+      </div>
+
+      <!-- Luces y Faroles del Barco -->
+      <div class="customizer-section">
+        <label class="toggle-switch-label" style="margin-bottom: 8px;">
+          <input type="checkbox" id="check-ship-lanterns" checked>
+          <span>🏮 Activar Luces y Faroles</span>
+        </label>
+        <div class="color-picker-row" id="ship-lantern-options">
+          <button class="color-swatch-btn active" data-color="#ffd166" style="background-color: #ffd166;" title="Ámbar Cálido"></button>
+          <button class="color-swatch-btn" data-color="#ff4422" style="background-color: #ff4422;" title="Fuego Rubí"></button>
+          <button class="color-swatch-btn" data-color="#10b981" style="background-color: #10b981;" title="Verde Esmeralda"></button>
+          <button class="color-swatch-btn" data-color="#38bdf8" style="background-color: #38bdf8;" title="Azul Glaciar"></button>
+          <button class="color-swatch-btn" data-color="#c084fc" style="background-color: #c084fc;" title="Púrpura Fantasma"></button>
+          <button class="color-swatch-btn" data-color="#f8fafc" style="background-color: #f8fafc;" title="Blanco Perla"></button>
+          <div class="custom-color-input-wrapper" title="Color de Luz Personalizado">
+            <input type="color" id="input-custom-lantern-color" class="custom-color-input" value="#ffd166">
+            <span style="font-size: 0.78rem; color: #ffd166;">Libre</span>
+          </div>
         </div>
       </div>
 
@@ -292,27 +330,48 @@
   <!-- 5. MODAL DE FIN DE PARTIDA (GAME OVER / BARCO HUNDIDO) -->
   <div id="game-over-modal" class="ui-layer hidden">
     <div class="game-over-card">
-      <h2 class="game-over-title">¡BARCO HUNDIDO!</h2>
-      <p style="color: #cbd5e1; font-size: 1.05rem;">Tu navío ha descendido a las profundidades del Nahuel Huapi.</p>
+      <h2 class="game-over-title" id="game-over-modal-title">Perdiste esta batalla, guarda tu posición en la tabla</h2>
+      <p style="color: #cbd5e1; font-size: 1.05rem; margin-bottom: 12px;">Tu navío ha descendido a las profundidades del Nahuel Huapi.</p>
 
       <div class="game-over-score-badge">
         <span class="hud-stat-label">PUNTUACIÓN TOTAL ACUMULADA</span>
-        <div class="score-value" id="game-over-score">1,250</div>
-        <span style="color: #8ecae6; font-size: 0.9rem;" id="game-over-sunk-count">Barcos Hundidos: 2</span>
+        <div class="score-value" id="game-over-score">0</div>
+        <span style="color: #8ecae6; font-size: 0.95rem; font-weight: 600;" id="game-over-sunk-count">Barcos Hundidos: 0</span>
       </div>
 
-      <!-- Formulario para Guardar en la Base de Datos SQLite -->
-      <div style="margin-bottom: 20px; text-align: left;">
-        <label class="customizer-label" for="input-leaderboard-name">Nombre y Apellido del Capitán:</label>
-        <input type="text" id="input-leaderboard-name" class="customizer-input-text" maxlength="30" placeholder="Ej. Nicole Comodoro">
+      <!-- Estado de guardado automático en SQLite -->
+      <div id="game-over-autosave-badge" class="auto-save-status-badge">
+        <span>✅ Puntuación guardada automáticamente en la tabla</span>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button id="btn-save-leaderboard" class="btn-naval">
-          🏆 Guardar en Tabla de Clasificación
+      <!-- Formulario para Guardar / Actualizar Nombre en la Base de Datos SQLite -->
+      <div style="margin-bottom: 16px; text-align: left;">
+        <label class="customizer-label" for="input-leaderboard-name">Nombre del Capitán en la Tabla:</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="input-leaderboard-name" class="customizer-input-text" maxlength="30" placeholder="Ej. Nicole Comodoro">
+          <button id="btn-save-leaderboard" class="btn-naval" style="padding: 10px 16px; white-space: nowrap;">
+            💾 Guardar
+          </button>
+        </div>
+      </div>
+
+      <!-- Vista previa rápida del Leaderboard con posiciones actuales -->
+      <div class="game-over-leaderboard-box">
+        <div style="font-family: var(--font-title); font-size: 0.9rem; color: #ffd166; margin-bottom: 8px; display: flex; justify-content: space-between;">
+          <span>🏆 Clasificación de Capitanes (SQLite):</span>
+          <span style="color: #8ecae6; font-size: 0.8rem;">Top 5</span>
+        </div>
+        <div id="game-over-leaderboard-list">
+          <div style="color: #94a3b8; font-size: 0.85rem;">Cargando posiciones...</div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+        <button id="btn-game-over-respawn" class="btn-naval">
+          ⚔️ Zarpar de Nuevo
         </button>
         <button id="btn-game-over-menu" class="btn-naval btn-secondary">
-          ⛵ Volver al Menú Principal
+          ⛵ Volver al Menú
         </button>
       </div>
     </div>

@@ -23,6 +23,7 @@ class NetworkClient {
     this.onQueueStatus = null;
     this.onPlayerLeft = null;
     this.onEvent = null;
+    this.onPlayerDestroyed = null;
   }
 
   connect() {
@@ -99,6 +100,15 @@ class NetworkClient {
 
     this.socket.on('player:left', (data) => {
       if (this.onPlayerLeft) this.onPlayerLeft(data.id);
+    });
+
+    // 4. Barco Destruido / Derrota
+    this.socket.on('combat:destroyed', (data) => {
+      console.log('[⚔️] Barco destruido en el lago:', data);
+      this.isInMatch = false;
+      if (this.onPlayerDestroyed) {
+        this.onPlayerDestroyed(data);
+      }
     });
 
     this.socket.on('disconnect', () => {
