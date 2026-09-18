@@ -67,9 +67,16 @@
 npm install
 
 # 2. Iniciar servidor
-node server.js
+npm start
+# o: node server.js
 ```
 El servidor arrancará en el puerto local: `http://localhost:3000`.
+
+### Opción 3: Despliegue en la Nube (Render.com)
+El repositorio incluye configuración nativa con `render.yaml`:
+- **Build Command:** `npm install`
+- **Start Command:** `node server.js`
+- **Runtime:** `Node`
 
 ---
 
@@ -81,7 +88,8 @@ Fly/
 ├── install.bat           # Script de instalación de dependencias
 ├── run.bat               # Script de ejecución del servidor
 ├── server.js             # Servidor autoritativo Node.js / Socket.io / SQLite
-├── package.json          # Configuración del paquete y dependencias
+├── package.json          # Configuración del paquete y scripts npm
+├── render.yaml           # Configuración de despliegue en Render.com
 ├── .gitignore            # Exclusiones de Git
 ├── README.md             # Documentación del proyecto
 └── public/               # Frontend completo (Strict isolation)
